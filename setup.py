@@ -1,0 +1,22 @@
+from setuptools import setup
+
+setup(
+    name='netallocation',
+    version='0.0.1',
+    author='Fabian Hofmann (FIAS)',
+    author_email='hofmann@fias.uni-frankfurt.de',
+    description='Package for allocating flows and costs in a PyPSA network',
+#    long_description=long_description,
+    url='https://github.com/FRESNA/netallocation',
+    license='GPLv3',
+    include_package_data=True,
+    install_requires=['pypsa','pandas>=0.24.0'],
+    classifiers=[
+#        'Development Status :: 3 - Alpha',
+        'Environment :: Console',
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
+        'Natural Language :: English',
+        'Operating System :: OS Independent',
+    ])
+

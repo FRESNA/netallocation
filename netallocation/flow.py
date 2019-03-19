@@ -13,16 +13,17 @@ import pandas as pd
 import numpy as np
 from collections import Iterable
 import os
-from numpy import sign
+from numpy import sign, conj, real
 import logging
 logger = logging.getLogger(__name__)
 
 from .breakdown import expand_by_sink_type, expand_by_source_type
 from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
-                        PTDF, admittance)
+                        branch_inflow, branch_outflow,
+                        PTDF, CISF, admittance, voltage, Ybus)
 from .linalg import diag, inv, pinv
-from .utils import parmap
+from .utils import parmap, upper, lower, last_to_first_level
 
 def average_participation(n, snapshot, per_bus=False, normalized=False,
                           downstream=True, branch_components=['Line', 'Link'],
@@ -82,7 +83,6 @@ def average_participation(n, snapshot, per_bus=False, normalized=False,
 
     f0 = network_flow(n, snapshot, branch_components)
     f1 = network_flow(n, snapshot, branch_components, ingoing=False)
-
     f_in = f0.where(f0 > 0, - f1)
     f_out = f0.where(f0 < 0,  - f1)
 
@@ -113,47 +113,98 @@ def average_participation(n, snapshot, per_bus=False, normalized=False,
 
     q = (Q.rename_axis('in').rename_axis('source', axis=1)
          .replace(0, np.nan)
-         .stack().swaplevel(0)#.sort_index()
-         .rename('upstream'))#.pipe(set_cats, n))
+         .stack().swaplevel(0)
+         .rename('upstream'))
 
     r = (R.rename_axis('out').rename_axis('sink', axis=1)
          .replace(0, np.nan)
-         .stack()#.sort_index()
-         .rename('downstream'))#.pipe(set_cats, n))
+         .stack()
+         .rename('downstream'))
 
+    T = (pd.concat([q,r], axis=0, keys=['upstream', 'downstream'],
+                   names=['method', 'source', 'sink']).rename('allocation'))
+    T = pd.concat([T], keys=[snapshot], names=['snapshot'])
 
     if per_bus:
-        T = (pd.concat([q,r], axis=0, keys=['upstream', 'downstream'],
-                       names=['method', 'source', 'sink'])
-             .rename('allocation'))
         if downstream is not None:
-            T = T.downstream if downstream else T.upstream
-
+            T = T.loc[:, 'downstream'] if downstream else T.loc[:, 'upstream']
     else:
         f = f_in if downstream else f_out
-
-        f = (n.branches().loc[branch_components]
-               .assign(flow=f)
-               .rename_axis(['component', 'branch_i'])
-               .set_index(['bus0', 'bus1'], append=True)['flow'])
-
-        # absolute flow with directions
-        f_dir = pd.concat(
-                [f[f > 0].rename_axis(index={'bus0':'in', 'bus1': 'out'}),
-                 f[f < 0].swaplevel()
-                         .rename_axis(index={'bus0':'out', 'bus1': 'in'})])
+        T = _ap_normalized_to_flow(T, n, branch_components, f=f,
+                                  normalized=normalized)
+    return T
 
 
-        if normalized:
-            f_dir = (f_dir.groupby(level=['component', 'branch_i'])
-                     .transform(lambda ds: ds/ds.abs().sum()))
+def _ap_normalized_to_flow(allocation, n, branch_components, f=None,
+                          downstream=True, normalized=False):
+    """Helper function to extend normalized average participation bus-to-bus
+    allocation to line flow allocation. This function was pulled out of the
+    main function to enable it for multiple snapshots.
+    """
 
-        T = (q * f_dir * r).dropna() \
+    sns = allocation.index.unique('snapshot')
+    q = allocation.loc[:, 'upstream']\
+            .rename_axis(['snapshot', 'source', 'in']).rename('upstream')
+    r = allocation.loc[:, 'downstream']\
+            .rename_axis(['snapshot', 'out', 'sink']).rename('downstream')
+
+    if f is None:
+        if downstream:
+            f = branch_inflow(n, sns, branch_components)
+        else:
+            f = branch_outflow(n, sns, branch_components)
+    # add bus0 and  bus1 to index
+    f = pd.concat([f, n.branches().loc[branch_components, ['bus0', 'bus1']]],
+                   axis=1).rename_axis(index=['component', 'branch_i']) \
+           .set_index(['bus0', 'bus1'], append=True)\
+           .rename_axis(columns='snapshot').stack()\
+           .pipe(last_to_first_level)
+
+    # absolute flow with directions
+    f_dir = pd.concat(
+            [f[f > 0].rename_axis(index={'bus0':'in', 'bus1': 'out'}),
+             f[f < 0].swaplevel()
+                     .rename_axis(index={'bus0':'out', 'bus1': 'in'})])
+
+    if normalized:
+        f_dir = (f_dir.groupby(level=['snapshot', 'component', 'branch_i'])
+                 .transform(lambda ds: ds/ds.abs().sum()))
+    return ((q * f_dir).dropna() * r).dropna() \
             .droplevel(['in', 'out'])\
-            .reorder_levels(['source', 'sink', 'component', 'branch_i'])\
-            .rename('allocation')
+            .rename('allocation') \
+            .reorder_levels(['snapshot', 'source',  'sink',
+                             'component', 'branch_i'])
 
-    return pd.concat([T], keys=[snapshot], names=['snapshot'])
+
+def _ap_normalized_to_dispatch(allocation, n, aggregated):
+    """Helper function to scale normalized average participation bus-to-bus
+    allocation to real dispatch values. This function was created
+    to enable calculating multiple snapshots at once.
+    """
+    q = allocation.loc[:, 'downstream'].rename('upstream')
+    sns = q.index.unique('snapshot')
+    branch_components = ['Line', 'Link']
+    if aggregated:
+        p_in = network_injection(n, sns, branch_components=branch_components)\
+                .clip(lower=0).T.rename_axis('source')\
+                .unstack().rename('p_in')[lambda ds: ds!=0]
+    else:
+        p_in = power_production(n, sns).T.unstack().rename('p_in')
+
+    T =  (q * p_in).dropna()
+
+    if aggregated:
+        # add self-consumption
+        s = self_consumption(n, sns)
+        s = s.set_axis(pd.MultiIndex.from_tuples(zip(s.columns, s.columns)),
+                      axis=1, inplace=False) \
+             .rename_axis(['source', 'sink'], axis=1)\
+             .unstack().pipe(last_to_first_level) \
+             .rename('selfconsumption')\
+             [lambda ds: ds!=0]
+        T = T.append(s).sort_index(level=0)
+    return T.rename('allocation')
+
 
 
 def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
@@ -288,7 +339,8 @@ def virtual_injection_pattern(n, snapshot=None, normalized=False, per_bus=False,
 
 
 
-def zbus_transmission(n, snapshot=None):
+def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
+                      branch_components=['Line', 'Transformer']):
     '''
     This allocation builds up on the method presented in [1]. However, we
     provide for non-linear power flow an additional DC-approximated
@@ -302,62 +354,45 @@ def zbus_transmission(n, snapshot=None):
     '''
     n.calculate_dependent_values()
     snapshot = n.snapshots[0] if snapshot is None else snapshot
-    slackbus = n.buses[(n.buses_t.v_ang == 0).all()].index[0]
+    b_comps = branch_components
 
 
+    K = Incidence(n, branch_components=b_comps)
+    Y = Ybus(n, b_comps, linear=linear)  # Ybus matrix
 
+    v = voltage(n, snapshot, linear=linear)
 
-#%%
+    H = PTDF(n, b_comps) if linear else CISF(n, b_comps)
 
-    # linearised method, start from linearised admittance matrix
-    y = admittance(n, branch_components=['Line'])
-    y = 1/n.branches().x.reindex_like(y)
-    K = Incidence(n, branch_components=['Line'])
-    Y = K @ diag(y) @ K.T  # Ybus matrix
-    theta = n.buses_t.v_ang.loc[snapshot].rename_axis('bus0')
-    v_nom = n.buses.v_nom
-    v = (1 + theta) * v_nom
-
-#    diag(y) @ K.T @ (v * v_nom)
     i = Y @ v
-    (i * v_nom) >> network_injection(n, snapshot, ['Line'])
-#    assert all((i * v).apply(np.real) == )
+    f = network_flow(n, snapshot, b_comps)
+    if downstream is None:
+        v_ = K.abs().T @ v / 2
+    elif downstream:
+        v_ = upper(K @ diag(sign(f))).T @ v
+    else:
+        v_ = -lower(K @ diag(sign(f))).T @ v
 
-#%%
-    # -------------------------------------------------------------------------
-    # nonlinear method start with full admittance matrix from pypsa
-#    n.sub_networks.obj[0].calculate_Y()
-    # Zbus matrix
-#    Y = pd.DataFrame(n.sub_networks.obj[0].Y.todense(), buses, buses)
-#    Z = pd.DataFrame(pinv(Y), buses, buses)
-#    Z = Z.add(-Z.loc[slackbus])
+    if linear:
+        i >> network_injection(n, snapshot, branch_components=b_comps)
+        fun = lambda v_, i : H @ diag(i) # which is the same as mp with q=0.5
+    else:
+        (np.conj(i) * v).apply(np.real) >> n.buses_t.p.loc[snapshot].T
+        fun = lambda v_, i : ( diag(v_) @ conj(H) @ diag(conj(i)) ).applymap(real)
 
-    # -------------------------------------------------------------------------
 
-    # y_sh = n.lines.set_index(['bus0', 'bus1']).eval('g_pu + 1.j * b_pu')
+    if isinstance(snapshot, pd.Timestamp):
+        v_ = v_.to_frame(snapshot)
+        i = i.to_frame(snapshot)
+        snapshot = [snapshot]
 
-    A = (K * y).T @ Z # == diag(y) @ K.T @ Z == PTDF
-         #+ Z.mul(y_sh, axis=0, level=0).set_axis(n.lines.index, inplace=False)
-    A = A.applymap(np.real_if_close)
-    branches = ['Line']
-    f = pd.concat([n.pnl(b).p0.loc[snapshot] for b in branches], keys=branches)
+    q = pd.concat((fun(v_[sn], i[sn]) for sn in snapshot), keys=snapshot,
+                  names=['snapshot', 'component', 'branch_i'])\
+            .rename_axis(columns='bus')
 
-    V_l_at = lambda bus: pd.concat([n.df(b)[bus].map(V[snapshot])
-                                    / n.df(b)[bus].map(n.buses.v_nom ** 2)
-                                    for b in branches], keys=branches)
+    return q.stack()\
+            .reorder_levels(['snapshot', 'bus', 'component', 'branch_i'])
 
-    V_l = V_l_at('bus0').where(f > 0, V_l_at('bus1'))
-
-    # q = PTDF(n) * p[snapshot]
-    q = A.mul(V_l, axis=0)\
-         .mul(I[snapshot]) \
-         .applymap(np.real) \
-         .stack() \
-         .rename_axis(['component', 'branch_i', 'bus']) \
-         .reorder_levels(['bus', 'component', 'branch_i'])\
-         .sort_index()
-
-    return pd.concat([q], keys=[snapshot], names=['snapshot'])
 
 
 def with_and_without_transit(n, snapshots=None,
@@ -365,7 +400,6 @@ def with_and_without_transit(n, snapshots=None,
     regions = n.buses.country.unique()
 
     if not n.links.empty:
-        from pypsa.allocation import admittance, Incidence, diag, pinv
         Y = pd.concat([admittance(n, branch_components, sn)
                        for sn in snapshots], axis=1,
                        keys=snapshots)

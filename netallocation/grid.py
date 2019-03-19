@@ -44,38 +44,39 @@ def active_cycles(n, snapshot):
     C = Cycles(n, update=True)
     # reassign original links
     n.links = orig_links
-    return C.reindex(columns=n.branches().index, fill_value=0)
+    return C.reindex(
+            columns=n.branches().rename_axis(['component', 'branch_i']).index,
+            fill_value=0)
 
 
 def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
               pu_system=True, linear=True):
-    n.lines = n.lines.assign(carrier=n.lines.bus0.map(n.buses.carrier))
+    branches = n.branches().assign(carrier=n.branches()\
+                           .bus0.map(n.buses.carrier))\
+                           .rename_axis(['component', 'branch_i'])\
+                           .reindex(branch_components, level=0)
 
-    #impedance
+    #standard impedance
     x = 'x_pu' if pu_system else 'x'
     r = 'r_pu' if pu_system else 'r'
 
     if linear:
-        _z = [n.lines[x].where(n.lines.carrier == 'AC', n.lines[r])]
-        z = pd.concat(_z, keys=["Line"]).rename_axis(['component', 'branch_i'])
+        z = branches[x].where(branches.carrier == 'AC', branches[r])
     else:
-        z = n.branches().eval('r + 1.j * x')\
-             .reindex(branch_components, level=0) \
-             .rename_axis(['component', 'branch_i'])
+        z = branches.eval(f'{r} + 1.j * {x}')
 
-
+    # experimental add pseudo impedance for links, in dependence on the current
+    # flow:
     if ('Link' not in branch_components) | n.links.empty :
         return z
     if snapshot is None:
         logger.warn('Link in argument "branch_components", but no '
                         'snapshot given. Falling back to first snapshot')
         snapshot = n.snapshots[0]
-    elif isinstance(snapshot, pd.DatetimeIndex):
-        snapshot = snapshot[0]
 
-    f = pd.concat([n.lines_t.p0.loc[snapshot], n.links_t.p0.loc[snapshot]],
-                  keys=['Line', 'Link'])
-    n.lines = n.lines.assign(carrier=n.lines.bus0.map(n.buses.carrier))
+    z = z.reindex(set(branch_components) - {'Link'}, level=0)
+
+    f = network_flow(n, snapshot)
 
     C = active_cycles(n, snapshot)
 
@@ -98,17 +99,39 @@ def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
 def admittance(n, branch_components=['Line', 'Link'], snapshot=None,
                pu_system=True, linear=True):
     return (1/impedance(n, branch_components, snapshot, pu_system=pu_system,
-                        linear=linear))\
-            .replace([np.inf, -np.inf], 0)
+                        linear=linear)).replace([np.inf, -np.inf], 0)
 
 
-def PTDF(n, branch_components=['Line'], snapshot=None, pu_system=True,
-         linear=True):
+def series_shunt_admittance(n, pu_system=True):
+    g, b = ('g_pu', 'b_pu') if pu_system else ('g', 'b')
+    return n.branches().fillna(0).eval(f'{g} + 1.j * {b}')\
+            .rename_axis(['component', 'branch_i'])
+
+
+def shunt_admittance(n, pu_system=True):
+    g, b = ('g_pu', 'b_pu') if pu_system else ('g', 'b')
+    K = Incidence(n, branch_components=n.branches().index.unique(0))
+    series_shunt = series_shunt_admittance(n, pu_system)
+    nodal_shunt = n.shunt_impedances.fillna(0).groupby('bus').sum()\
+                    .eval(f'{g} + 1.j * {b}')\
+                    .reindex(n.buses.index, fill_value=0)
+    return 0.5 * K.abs() @ series_shunt + nodal_shunt
+
+
+def PTDF(n, branch_components=['Line'], snapshot=None, pu_system=True):
     n.calculate_dependent_values()
     K = Incidence(n, branch_components)
-    y = admittance(n, branch_components, snapshot,
-                   pu_system=pu_system, linear=linear)
+    y = admittance(n, branch_components, snapshot, pu_system=pu_system)
     return diag(y) @ K.T @ pinv(K @ diag(y) @ K.T)
+
+
+
+def CISF(n, branch_components=['Line', 'Transformer'], pu_system=True):
+    n.calculate_dependent_values(), n.determine_network_topology()
+    K = Incidence(n, branch_components)
+    y = admittance(n, branch_components, pu_system=pu_system, linear=False)
+    Z = Zbus(n, branch_components, pu_system=pu_system, linear=False)
+    return diag(y) @ K.T @ Z
 
 
 def Ybus(n, branch_components=['Line', 'Link'], snapshot=None,
@@ -116,35 +139,79 @@ def Ybus(n, branch_components=['Line', 'Link'], snapshot=None,
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, snapshot,
                    pu_system=pu_system, linear=linear)
+    Y = K @ diag(y) @ K.T
     if linear:
-        return K @ diag(y) @ K.T
+        return Y
+    else:
+        if not pu_system:
+            raise NotImplementedError('Non per unit system '
+                                      'for non-linear Ybus matrix not '
+                                      'implemented')
+        return Y + diag(shunt_admittance(n, pu_system))
 
-    def get_Ybus(sub):
-        sub.calculate_PTDF()
-        sub.calculate_Y()
-        return pd.DataFrame(sub.Y.todense(), index=sub.buses_o,
-                         columns=sub.buses_o)
-    if not pu_system:
-        raise NotImplementedError('Non per unit system '
-                                  'for non-linear Ybus matrix not implemented')
-    return pd.concat(n.sub_networks.obj.apply(get_Ybus).to_dict())
+#        def get_Ybus(sub):
+#            sub.calculate_PTDF()
+#            sub.calculate_Y()
+#            return pd.DataFrame(sub.Y.todense(), index=sub.buses_o,
+#                             columns=sub.buses_o)
+#        return n.sub_networks.obj.apply(get_Ybus)
 
 
 
-def Zbus(n, branch_components=['Line', 'Link'], snapshot=None,
+def Zbus(n, branch_components=['Line'], snapshot=None,
          pu_system=True, linear=True):
-    return pinv(Ybus(n, branch_components, snapshot,
+#    if linear:
+    return pinv(Ybus(n, branch_components=branch_components,
+                     snapshot=snapshot,
                      pu_system=pu_system, linear=linear))
+#    else:
+#        return Ybus(n, branch_components, snapshot,
+#                     pu_system=pu_system, linear=False).apply(pinv)
+
+
+def voltage(n, snapshots=None, linear=True, pu_system=True):
+    if linear:
+        v = n.buses_t.v_ang.loc[snapshots] + 1
+#        v = np.exp(- 1.j * n.buses_t.v_ang).T[snapshots]
+    else:
+        v = (n.buses_t.v_mag_pu * np.exp(- 1.j * n.buses_t.v_ang)).T[snapshots]
+
+    if not pu_system:
+        v *= n.buses.v_nom
+
+    return v
+
 
 
 def network_flow(n, snapshots=None, branch_components=['Link', 'Line'],
-                 ingoing=True):
+                 ingoing=True, linear=True):
     snapshots = n.snapshots if snapshots is None else snapshots
     p = 'p0' if ingoing else 'p1'
-    return pd.concat([n.pnl(b)[p] for b in branch_components], axis=1,
-                      keys=branch_components)\
-             .rename_axis(['component', 'branch_i'], axis=1)\
-             .loc[snapshots]
+    f = pd.concat([n.pnl(b)[p] for b in branch_components], axis=1,
+                   keys=branch_components)\
+                   .rename_axis(['component', 'branch_i'], axis=1)\
+                   .loc[snapshots]
+    if linear:
+        return f
+    else:
+        q = 'q0' if ingoing else 'q1'
+        return f + 1.j * \
+                pd.concat([n.pnl(b)[q] for b in branch_components], axis=1,
+                           keys=branch_components)\
+                           .rename_axis(['component', 'branch_i'], axis=1)\
+                           .loc[snapshots]
+
+
+def branch_inflow(n, snapshots=False, branch_components=['Line', 'Link']):
+    f0 = network_flow(n, snapshots, branch_components).T
+    f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
+    return f0.where(f0 > 0, - f1)
+
+
+def branch_outflow(n, snapshots=False, branch_components=['Line', 'Link']):
+    f0 = network_flow(n, snapshots, branch_components).T
+    f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
+    return f0.where(f0 < 0,  - f1)
 
 
 def network_injection(n, snapshots=None, branch_components=['Link', 'Line']):
@@ -162,9 +229,9 @@ def is_balanced(n, tol=1e-9):
     Helper function to double check whether network flow is balanced
     """
     K = Incidence(n)
-    F = pd.concat([n.lines_t.p0, n.links_t.p0], axis=1,
+    f = pd.concat([n.lines_t.p0, n.links_t.p0], axis=1,
                   keys=['Line', 'Link']).T
-    return (K.dot(F)).sum(0).max() < tol
+    return (K.dot(f)).sum(0).max() < tol
 
 
 def power_production(n, snapshots=None,

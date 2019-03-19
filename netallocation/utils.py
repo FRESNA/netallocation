@@ -6,12 +6,22 @@ Created on Thu Mar  7 15:10:07 2019
 @author: fabian
 """
 
-import pandas as pd
 import logging
 logger = logging.getLogger(__name__)
 import pypsa
 
 compute_if_dask = lambda df, b: df.compute() if b else df
+
+def upper(df):
+    return df.clip(lower=0)
+
+def lower(df):
+    return df.clip(upper=0)
+
+
+def last_to_first_level(ds):
+    return ds.reorder_levels([ds.index.nlevels-1] + \
+                             list(range(ds.index.nlevels-1)))
 
 def to_dask(df, use_dask=False):
     if use_dask:
@@ -118,7 +128,6 @@ def get_test_network(linear=True):
     if linear:
         n = pypsa.Network(__file__ +'/../../testnetwork.nc')
         n.calculate_dependent_values(); n.determine_network_topology()
-        return n
     else:
         # get solved scigrid model from pypsa example
         n = pypsa.Network(__file__ +'/../../testnetwork2.nc')
@@ -129,4 +138,4 @@ def get_test_network(linear=True):
 #        n.generators_t.q_set.reindex_like(n.generators_t.p)\
 #                        .assign(**{g: 0 for g in pq_gens})
 #        n.pf(n.snapshots[0])
-        return n
+    return n

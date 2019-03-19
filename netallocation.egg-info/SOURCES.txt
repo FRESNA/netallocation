@@ -1,0 +1,6 @@
+setup.py
+netallocation.egg-info/PKG-INFO
+netallocation.egg-info/SOURCES.txt
+netallocation.egg-info/dependency_links.txt
+netallocation.egg-info/requires.txt
+netallocation.egg-info/top_level.txt

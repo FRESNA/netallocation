@@ -6,8 +6,9 @@ Created on Thu Mar  7 15:38:24 2019
 @author: fabian
 """
 
-from .grid import self_consumption, power_demand, power_production
+from .grid import self_consumption, power_demand, power_production, network_flow
 import pandas as pd
+
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
                           cut_lower_share=1e-5):
@@ -79,4 +80,5 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
                              .stack() \
                              .reorder_levels(['snapshot', 'sink', 'sinktype'])
     return (share_per_bus_carrier * ds).dropna().rename('allocation')
+
 
