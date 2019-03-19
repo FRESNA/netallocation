@@ -100,8 +100,14 @@ def average_participation(n, snapshot, per_bus=False, normalized=False,
 
 #    Tau = lower(K_loss_dir) * f @ K.T + diag(p_in)
 
-    Q = inv(lower(K_dir) @ diag(f_out) @ K.T + diag(p_in)) @ diag(p_in)
-    R = inv(upper(K_dir) @ diag(f_in) @ K.T + diag(p_out)) @ diag(p_out)
+    try:
+        Q = inv(lower(K_dir) @ diag(f_out) @ K.T + diag(p_in)) @ diag(p_in)
+        R = inv(upper(K_dir) @ diag(f_in) @ K.T + diag(p_out)) @ diag(p_out)
+    except np.linalg.LinAlgError:
+        # catch case of buses with no injection
+        Q = pinv(lower(K_dir) @ diag(f_out) @ K.T + diag(p_in)) @ diag(p_in)
+        R = pinv(upper(K_dir) @ diag(f_in) @ K.T + diag(p_out)) @ diag(p_out)
+
 
     if not normalized and per_bus:
         Q = diag(p_out) @ Q
