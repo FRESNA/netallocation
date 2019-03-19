@@ -13,7 +13,14 @@ import scipy as sp
 def pinv(df):
     return pd.DataFrame(np.linalg.pinv(df), df.columns, df.index)
 
-def inv(df):
+def inv(df, pre_clean=False):
+    if pre_clean:
+        zeros_b = df == 0
+        zero_rows_b = zeros_b.all(1)
+        zero_cols_b = zeros_b.all()
+        return pd.DataFrame(np.linalg.inv(df.loc[~zero_rows_b, ~zero_cols_b]),
+                            df.columns[~zero_cols_b], df.index[~zero_rows_b])\
+                            .reindex_like(df.T).fillna(0)
     return pd.DataFrame(np.linalg.inv(df), df.columns, df.index)
 
 
