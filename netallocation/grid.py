@@ -284,7 +284,8 @@ def power_demand(n, snapshots=None,
             assert (intersc.empty), (
                     'Carrier names {} of compoents are not unique'
                     .format(intersc))
-        n.loads = n.loads.assign(carrier='load')
+        if 'carrier' not in n.loads:
+            n.loads = n.loads.assign(carrier='load')
         n.buses_t.p_minus_per_carrier = -(
                 pd.concat([(n.pnl(c).p.T
                 .mul(n.df(c).sign, axis=0)
