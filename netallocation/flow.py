@@ -589,7 +589,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
                 Sequentially calculate the load flow induced by
                 individual power sources in the network ignoring other
                 sources and scaling down sinks.
-            - 'Least square color flows'/'mfs'
+            - 'Minimal flow shares'/'mfs'
+            - 'Zbus transmission'/''zbus'
 
 
     Returns
@@ -612,18 +613,21 @@ def flow_allocation(n, snapshots=None, method='Average participation',
 
     if method in ['Average participation', 'ap']:
         method_func = average_participation
-    elif method in ['Marginal Participation', 'mp']:
+    elif method in ['Marginal participation', 'mp']:
         method_func = marginal_participation
     elif method in ['Virtual injection pattern', 'vip']:
         method_func = virtual_injection_pattern
+    elif method in ['Minimal flow shares', 'mfs']:
+        method_func = minimal_flow_shares
     elif method in ['Zbus transmission', 'zbus']:
         method_func = zbus_transmission
     else:
         raise(ValueError('Method not implemented, please choose one out of'
-                         "['Average participation', "
-                         "'Marginal participation',"
-                         "'Virtual injection pattern',"
-                         "'Least square color flows']"))
+                         "['Average participation',"
+                           "'Marginal participation',"
+                           "'Virtual injection pattern',"
+                           "'Minimal flow shares',"
+                           "'Zbus transmission']"))
 
     if snapshots is None:
         snapshots = n.snapshots

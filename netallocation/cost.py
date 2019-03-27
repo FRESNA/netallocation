@@ -55,7 +55,7 @@ def normalised_branch_cost(allocation, cost_model=None, cost_factors=None):
 def branch_cost(network, allocation, cost_model=None, cost_factors=None):    
     branch_cost = normalised_branch_cost(allocation, cost_model=cost_model, cost_factors=cost_factors) * \
                   length(network)
-    branch_cost = branch_cost.dropna().reorder_levels(['snapshot', 'source', 'sink', 'component', 'branch_i'])
+    branch_cost = branch_cost.dropna().reorder_levels(allocation.index.names)
     # Drop lines/links that show no flow, i.e. do not take part in the flow allocation procedure at all
     return branch_cost.rename('branch cost')
 ####################################################################################################################
@@ -83,7 +83,7 @@ def mw_mile(allocation, branch_cost):
 # €
 def capacity_pricing(network, allocation, branch_cost):
     transmission_cost = (abs(allocation)/capacity(network)) \
-                        .dropna().reorder_levels(['snapshot', 'source', 'sink', 'component', 'branch_i']) * \
+                        .dropna().reorder_levels(allocation.index.names) * \
                         branch_cost
     return transmission_cost.rename('transmission cost')
 ####################################################################################################################
@@ -96,7 +96,7 @@ def cost_normalisation(transmission_cost, total_transmission_cost):
     normalisation = total_transmission_cost / transmission_cost.sum()
     return normalisation
 
-# Extracts sum of optimised capital and marginal cost for lines and links in a given PyPSA network
+# Extracts sum of optimised capital and marginal cost of lines and links in a given PyPSA network
 # €
 def total_transmission_cost(network, snapshot):
     # From kW to MW
@@ -119,7 +119,7 @@ def total_transmission_cost(network, snapshot):
 # Main Function
 ####################################################################################################################
 # Calculates transmission cost using different pricing strategies
-# Transmission cost does not include infrastructure, i.e. maintainance, reliability, etc.
+# Transmission cost per se does not include infrastructure, i.e. maintainance, reliability, etc.
 # €
 def transmission_cost(network, snapshot,
                       allocation_method='Average participation', pricing_strategy='MW-Mile',
