@@ -27,10 +27,10 @@ def branch_cost_model(allocation, cost_model=None):
         raise NameError('No valid cost model for the given pricing strategy.')
     # €/MW*km
     elif cost_model == 'MW-Mile':
-        cost_factors = np.random.random(len(allocation.index))
+        raise NotImplementedError(cost_model + ' yet not implemented!')
     # €/km
     elif cost_model == 'Capacity Pricing':
-        cost_factors = np.random.random(len(allocation.index))
+        raise NotImplementedError(cost_model + ' yet not implemented!')
     # €/MW*km
     elif cost_model == 'Random Numbers':
         cost_factors = np.random.random(len(allocation.index))
@@ -89,13 +89,31 @@ def capacity_pricing(network, allocation, branch_cost):
 ####################################################################################################################
 
 
-# Total System Costs
+# Total Transmission Cost
 ####################################################################################################################
-# Extracts optimised capital and marginal cost of lines and links for a given PyPSA network
+# Normalise transmission cost by total cost
+def cost_normalisation(transmission_cost, total_transmission_cost):
+    normalisation = total_transmission_cost / transmission_cost.sum()
+    return normalisation
+
+# Extracts sum of optimised capital and marginal cost for lines and links in a given PyPSA network
 # €
-def total_cost(network, snapshot):
+def total_transmission_cost(network, snapshot):
+    # From kW to MW
+    # Lines
+    cap_lines = (network.lines['capital_cost'] * network.lines['length'] * \
+                 network.lines['s_nom_opt'] / 1e3).sum()
     
+    # Links
+    cap_links = (network.links['capital_cost'] * network.links['length'] * \
+                 network.links['p_nom_opt'] / 1e3).sum()
+    mar_links = (network.links['marginal_cost'] * network.links['length'] * \
+                 abs(network.links_t.p0.loc[snapshot]) / 1e3).sum().sum()
+
+    # Total transmission cost
+    total_cost = cap_lines + cap_links + mar_links
     return total_cost
+####################################################################################################################
 
 
 # Main Function
@@ -104,11 +122,9 @@ def total_cost(network, snapshot):
 # Transmission cost does not include infrastructure, i.e. maintainance, reliability, etc.
 # €
 def transmission_cost(network, snapshot,
-                      allocation_method='Average participation',
-                      pricing_strategy='MW-Mile',
-                      cost_model=None,
-                      allocation=None,
-                      cost_factors=None):
+                      allocation_method='Average participation', pricing_strategy='MW-Mile',
+                      cost_model=None, normalisation=True,
+                      allocation=None, cost_factors=None):
 
     # If no allocation is given, the specified allocation routine is executed
     if allocation is None: allocation = netallocation.allocate_flow(network, snapshot, method=allocation_method)
@@ -127,6 +143,11 @@ def transmission_cost(network, snapshot,
                                                          cost_model=cost_model, cost_factors=cost_factors))
     else:
         raise NameError('No valid pricing strategy.')
+    
+    # Normalise transmission cost by the total transmission cost from lines and links of the optimised PyPSA network
+    if normalisation == True:
+        transmission_cost = transmission_cost * cost_normalisation(transmission_cost, 
+                                                                   total_transmission_cost(network, snapshot))
         
     return transmission_cost
 ####################################################################################################################
