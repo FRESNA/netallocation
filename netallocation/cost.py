@@ -4,8 +4,9 @@ import pandas as pd
 from . import allocate_flow
 
 
-# Network meta data
+# Network Meta Data
 ####################################################################################################################
+# km
 def length(network):
     length_lines = pd.Series(network.lines.length.values,
                              pd.MultiIndex.from_tuples([('Line', idx) for idx in network.lines.length.index],
@@ -16,6 +17,7 @@ def length(network):
     length = length_lines.append(length_links)
     return length.rename('length')
 
+# MW
 def capacity(network):
     capacity_lines = pd.Series(network.lines.s_nom_opt.values,
                                pd.MultiIndex.from_tuples([('Line', idx) for idx in network.lines.s_nom_opt.index],
@@ -47,20 +49,20 @@ def branch_cost_model(allocation, cost_model=None):
     return cost_factors.rename('branch cost model')
 
 # €/MW*km
-def normalised_branch_cost(network, allocation, cost_model=None, cost_factors=None, norm=None):
+def normalised_branch_cost(network, allocation, cost_model=None, cost_factors=None):
     if cost_factors is None:
         cost_factors = branch_cost_model(allocation, cost_model=cost_model)
-        if norm=='MW': cost_factors = cost_factors * capacity(network)
-            
+        
     normalised_branch_cost = cost_factors
     return normalised_branch_cost.rename('normalised branch cost')
 
-# €/MW
+# €
 def branch_cost(network, allocation, cost_model=None, cost_factors=None, norm=None):    
-    branch_cost = normalised_branch_cost(network, allocation,
-                                         cost_model=cost_model, cost_factors=cost_factors,
-                                         norm=norm) * \
+    branch_cost = normalised_branch_cost(network, allocation, cost_model=cost_model, cost_factors=cost_factors) * \
                   length(network)
+    
+    if norm == 'MW': branch_cost = branch_cost * capacity(network)
+        
     branch_cost = branch_cost.dropna()
     return branch_cost.rename('branch cost')
 ####################################################################################################################
