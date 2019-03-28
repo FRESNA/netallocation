@@ -89,7 +89,9 @@ def total_transmission_cost(network, snapshot):
 # Pricing Strategies
 ####################################################################################################################
 def strategy_factor(network, allocation, pricing_strategy):
-    if pricing_strategy == 'MW-Mile':
+    if pricing_strategy is None:
+        raise NameError('No valid pricing strategy.')
+    elif pricing_strategy == 'MW-Mile':
         strategy_factor = pd.Series(1.0, allocation.index)
     elif pricing_strategy == 'Capacity Pricing':
         strategy_factor = (1.0/capacity(network)).replace(np.inf, np.nan).dropna()
