@@ -9,7 +9,7 @@ Created on Thu Mar  7 10:18:23 2019
 import pandas as pd
 import numpy as np
 from pypsa.pf import find_cycles as find_cycles
-from .linalg import pinv, diag, null
+from .linalg import pinv, diag, null, upper, lower
 import logging
 logger = logging.getLogger(__name__)
 
@@ -219,9 +219,10 @@ def network_injection(n, snapshots=None, branch_components=['Link', 'Line']):
     Function to determine the total network injection including passive and
     active branches.
     """
-    f = network_flow(n, snapshots, branch_components).T
-    K = Incidence(n, branch_components)
-    return (K @ f).T
+    f0 = network_flow(n, snapshots, branch_components).T
+    f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
+    return f0.groupby(n.branches().bus0).sum()\
+             .add(f1.groupby(n.branches().bus1).sum(), fill_value=0).T
 
 
 def is_balanced(n, tol=1e-9):

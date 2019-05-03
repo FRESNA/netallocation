@@ -21,7 +21,8 @@ def lower(df):
 
 def last_to_first_level(ds):
     return ds.reorder_levels([ds.index.nlevels-1] + \
-                             list(range(ds.index.nlevels-1)))
+                             list(range(ds.index.nlevels-1)))\
+             .sort_index(level=0, sort_remaining=False)
 
 def to_dask(df, use_dask=False):
     if use_dask:
@@ -103,7 +104,7 @@ def parmap(f, arg_list, nprocs=None, **kwargs):
             i, x = q_in.get()
             if i is None:
                 break
-            q_out.put((i, f(x)))
+            q_out.put((i, f(x, **kwargs)))
 
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()

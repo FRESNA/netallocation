@@ -10,6 +10,14 @@ import pandas as pd
 import numpy as np
 import scipy as sp
 
+
+def upper(df):
+    return df.clip(lower=0)
+
+def lower(df):
+    return df.clip(upper=0)
+
+
 def pinv(df):
     return pd.DataFrame(np.linalg.pinv(df), df.columns, df.index)
 
