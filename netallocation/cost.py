@@ -118,7 +118,8 @@ def transmission_cost(n, snapshot,
                                           .unstack()
                                           .reorder_levels([2,0,1])
                                           .sort_index())
-        allocation = (allocation/f_dir).dropna()
+        allocation = (allocation/f_dir).dropna()\
+                        .reorder_levels(allocation.index.names)
     else:
         allocation = abs(allocation)
 
