@@ -51,20 +51,27 @@ def active_cycles(n, snapshot):
 
 def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
               pu_system=True, linear=True):
+    #standard impedance
+    x = 'x_pu' if pu_system else 'x'
+    r = 'r_pu' if pu_system else 'r'
+
+    if pu_system and (n.lines[x] == 0).all():
+        n.calculate_dependent_values()
+
     branches = n.branches().assign(carrier=n.branches()\
                            .bus0.map(n.buses.carrier))\
                            .rename_axis(['component', 'branch_i'])\
                            .reindex(branch_components, level=0)
-
-    #standard impedance
-    x = 'x_pu' if pu_system else 'x'
-    r = 'r_pu' if pu_system else 'r'
 
     if linear:
         z = branches[x].where(branches.carrier == 'AC', branches[r])
     else:
         z = branches.eval(f'{r} + 1.j * {x}')
 
+    assert not (z.Line.max() == np.inf) | z.Line.isna().any(), (
+                'There seems to be a '
+               f'problem with your {x} or {r} values. At least one of these '
+               'is nan or inf. Please check the values in n.lines.')
     # experimental add pseudo impedance for links, in dependence on the current
     # flow:
     if ('Link' not in branch_components) | n.links.empty :
@@ -222,7 +229,8 @@ def network_injection(n, snapshots=None, branch_components=['Link', 'Line']):
     f0 = network_flow(n, snapshots, branch_components).T
     f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
     return f0.groupby(n.branches().bus0).sum()\
-             .add(f1.groupby(n.branches().bus1).sum(), fill_value=0).T
+             .add(f1.groupby(n.branches().bus1).sum(), fill_value=0)\
+             .reindex(n.buses.index, fill_value=0).T
 
 
 def is_balanced(n, tol=1e-9):
