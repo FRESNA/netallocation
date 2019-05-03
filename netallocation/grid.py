@@ -196,7 +196,8 @@ def network_flow(n, snapshots=None, branch_components=['Link', 'Line'],
     p = 'p0' if ingoing else 'p1'
     f = pd.concat([n.pnl(b)[p] for b in branch_components], axis=1,
                    keys=branch_components)\
-                   .rename_axis(['component', 'branch_i'], axis=1)\
+                   .rename_axis(index='snapshot',
+                                columns=['component', 'branch_i'])\
                    .loc[snapshots]
     if linear:
         return f
