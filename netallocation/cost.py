@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from . import allocate_flow
+from .flow import flow_allocation as allocate_flow
 
 
 # Network Meta Data
@@ -32,7 +32,7 @@ def capacity(network):
 
 # Branch Cost Model
 ####################################################################################################################
-# €/MW*km
+# €/MWkm*[CostModelUnit]
 def branch_cost_model(allocation, cost_model=None):
     if cost_model is None:
         raise NameError('No valid cost model for the given pricing strategy.')
@@ -48,7 +48,7 @@ def branch_cost_model(allocation, cost_model=None):
         raise NameError('No valid cost model for the given pricing strategy.')
     return cost_factors.rename('branch cost model')
 
-# €/MW*km
+# €/MWkm*[CostModelUnit]
 def normalised_branch_cost(network, allocation, cost_model=None, cost_factors=None):
     if cost_factors is None:
         cost_factors = branch_cost_model(allocation, cost_model=cost_model)
@@ -56,12 +56,10 @@ def normalised_branch_cost(network, allocation, cost_model=None, cost_factors=No
     normalised_branch_cost = cost_factors
     return normalised_branch_cost.rename('normalised branch cost')
 
-# €
-def branch_cost(network, allocation, cost_model=None, cost_factors=None, norm=None):    
+# €/MW*[CostModelUnit]
+def branch_cost(network, allocation, cost_model=None, cost_factors=None):    
     branch_cost = normalised_branch_cost(network, allocation, cost_model=cost_model, cost_factors=cost_factors) * \
                   length(network)
-    
-    if norm == 'MW': branch_cost = branch_cost * capacity(network)
         
     branch_cost = branch_cost.dropna()
     return branch_cost.rename('branch cost')
@@ -106,20 +104,18 @@ def strategy_factor(network, allocation, pricing_strategy):
 # €
 def transmission_cost(network, snapshot,
                       allocation_method='Average participation',
-                      pricing_strategy='MW-Mile', cost_model=None, normalisation=True, norm=None,
+                      pricing_strategy='MW-Mile', cost_model=None, normalisation=True,
                       allocation=None, cost_factors=None):
 
-    if allocation is None: allocation = netallocation.allocate_flow(network, snapshot, method=allocation_method)
+    if allocation is None: allocation = allocate_flow(network, snapshot, method=allocation_method)
         
     if cost_model is None: cost_model = pricing_strategy
-        
-    if cost_model == 'Capacity Pricing': norm = 'MW'
         
     transmission_cost = (abs(allocation) * \
                          strategy_factor(network, allocation, pricing_strategy)) \
                         .reorder_levels(allocation.index.names) * \
                          branch_cost(network, allocation,
-                                     cost_model=cost_model, cost_factors=cost_factors, norm=norm) \
+                                     cost_model=cost_model, cost_factors=cost_factors) \
                         .reorder_levels(allocation.index.names)
     
     if normalisation == True:
