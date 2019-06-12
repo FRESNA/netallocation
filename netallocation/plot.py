@@ -7,9 +7,10 @@ Created on Thu Mar  7 16:13:57 2019
 """
 
 import pandas as pd
+import matplotlib.pyplot as plt
 
-def chord_diagram(allocation, lower_bound=0, groups=None, size=300,
-                  save_path='/tmp/chord_diagram_pypsa'):
+def chord_diagram(allocation, agg='mean', minimum_quantile=0,
+                  groups=None, size=300):
     """
     This function builds a chord diagram on the base of holoviews [1].
     It visualizes allocated peer-to-peer flows for all buses given in
@@ -42,10 +43,9 @@ def chord_diagram(allocation, lower_bound=0, groups=None, size=300,
 
     import holoviews as hv
     hv.extension('matplotlib')
-    from IPython.display import Image
 
     if len(allocation.index.levels) == 3:
-        allocation = allocation[allocation.index.levels[0][0]]
+        allocation = allocation.agg('mean', level=['source', 'sink'])
 
     allocated_buses = allocation.index.levels[0] \
                       .append(allocation.index.levels[1]).unique()
@@ -54,7 +54,7 @@ def chord_diagram(allocation, lower_bound=0, groups=None, size=300,
     links = allocation.to_frame('value').reset_index()\
         .replace({'source': bus_map, 'sink': bus_map})\
         .sort_values('source').reset_index(drop=True) \
-        [lambda df: df.value >= lower_bound]
+        [lambda df: df.value >= df.value.quantile(minimum_quantile)]
 
     nodes = pd.DataFrame({'bus': bus_map.index})
     if groups is None:
@@ -68,19 +68,18 @@ def chord_diagram(allocation, lower_bound=0, groups=None, size=300,
         cindex = 'groups'
         ecindex = 'groups'
 
+    #annoying work around to construct cycler
+    cmap = hv.plotting.util.process_cmap('Category20', ncolors=20)
+    cmap = hv.core.options.Cycle(cmap)
+
     nodes = hv.Dataset(nodes, 'index')
     diagram = hv.Chord((links, nodes))
-    diagram = diagram.opts(style={'cmap': 'Category20',
-                                  'edge_cmap': 'Category20'},
+    diagram = diagram.opts(style={'cmap': cmap,
+                                  'edge_cmap': cmap},
                            plot={'label_index': 'bus',
                                  'color_index': cindex,
                                  'edge_color_index': ecindex
                                  })
-    renderer = hv.renderer('matplotlib').instance(fig='png', holomap='gif',
-                                                  size=size, dpi=300)
-    renderer.save(diagram, 'example_I')
-    return Image(filename='example_I.png', width=800, height=800)
-
-
-
-
+    fig = hv.render(diagram, size=200, dpi=300)
+    fig.tight_layout()
+    return fig, fig.axes

@@ -377,7 +377,7 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
         v_ = -lower(K @ diag(sign(f))).T @ v
 
     if linear:
-        i >> network_injection(n, snapshot, branch_components=b_comps)
+#        i >> network_injection(n, snapshot, branch_components=b_comps)
         fun = lambda v_, i : H @ diag(i) # which is the same as mp with q=0.5
     else:
         (np.conj(i) * v).apply(np.real) >> n.buses_t.p.loc[snapshot].T
@@ -553,7 +553,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
 
 def flow_allocation(n, snapshots=None, method='Average participation',
                     key=None, parallelized=False, nprocs=None, to_hdf=False,
-                    **kwargs):
+                    round_floats=8, **kwargs):
     """
     Function to allocate the total network flow to buses. Available
     methods are 'Average participation' ('ap'), 'Marginal
@@ -617,8 +617,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         method_func = marginal_participation
     elif method in ['Virtual injection pattern', 'vip']:
         method_func = virtual_injection_pattern
-    elif method in ['Minimal flow shares', 'mfs']:
-        method_func = minimal_flow_shares
+#    elif method in ['Minimal flow shares', 'mfs']:
+#        method_func = minimal_flow_shares
     elif method in ['Zbus transmission', 'zbus']:
         method_func = zbus_transmission
     else:
@@ -663,6 +663,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         flow = pd.concat(parmap(f, snapshots, nprocs=nprocs))
     else:
         flow = pd.concat((f(sn) for sn in snapshots))
+    if round_floats is not None:
+        flow = flow[flow.round(round_floats)!=0]
     return flow.rename('allocation')
 
 
