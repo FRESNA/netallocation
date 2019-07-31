@@ -10,7 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 def chord_diagram(allocation, agg='mean', minimum_quantile=0,
-                  groups=None, size=300):
+                  groups=None, size=200, pallette='Category20'):
     """
     This function builds a chord diagram on the base of holoviews [1].
     It visualizes allocated peer-to-peer flows for all buses given in
@@ -41,6 +41,7 @@ def chord_diagram(allocation, agg='mean', minimum_quantile=0,
 
     """
 
+    from holoviews.plotting.mpl import Layout, LayoutPlot
     import holoviews as hv
     hv.extension('matplotlib')
 
@@ -69,17 +70,23 @@ def chord_diagram(allocation, agg='mean', minimum_quantile=0,
         ecindex = 'groups'
 
     #annoying work around to construct cycler
-    cmap = hv.plotting.util.process_cmap('Category20', ncolors=20)
+    cmap = hv.plotting.util.process_cmap(pallette, ncolors=20)
     cmap = hv.core.options.Cycle(cmap)
 
     nodes = hv.Dataset(nodes, 'index')
     diagram = hv.Chord((links, nodes))
     diagram = diagram.opts(style={'cmap': cmap,
-                                  'edge_cmap': cmap},
+                                  'edge_cmap': cmap,
+                                  'tight':True},
                            plot={'label_index': 'bus',
                                  'color_index': cindex,
                                  'edge_color_index': ecindex
                                  })
-    fig = hv.render(diagram, size=200, dpi=300)
-    fig.tight_layout()
+
+#    fig = hv.render(diagram, size=size, dpi=300)
+
+    fig = LayoutPlot(Layout([diagram]), dpi=300, fig_size=100, fig_inches=6,
+                     tight=True, tight_padding=0, fig_bounds=(0, 0, 1, 1),
+                     hspace=0, vspace=0)\
+             .initialize_plot()
     return fig, fig.axes
