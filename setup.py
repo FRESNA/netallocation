@@ -10,7 +10,7 @@ setup(
     url='https://github.com/FRESNA/netallocation',
     license='GPLv3',
     include_package_data=True,
-    install_requires=['pypsa','pandas>=0.24.0'],
+    install_requires=['pypsa','pandas>=0.24.0', 'pyyaml'],
     classifiers=[
 #        'Development Status :: 3 - Alpha',
         'Environment :: Console',

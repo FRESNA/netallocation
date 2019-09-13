@@ -7,6 +7,11 @@ netallocation was initially developed by the
 [Renewable Energy Group](https://fias.uni-frankfurt.de/physics/schramm/complex-renewable-energy-networks/) at [FIAS](https://fias.uni-frankfurt.de/) for the [NetAllok project](https://www.enargus.de/pub/bscw.cgi/?op=enargus.eps2&v=10&s=14&q=EA3310&id=399670&p=10) financed by the [German Federal Ministry for Economic Affairs and Energy (BMWi)](https://www.bmwi.de/Navigation/DE/Home/home.html).
 
 
+# Under construction
+
+<img src="https://www.symbols.com/gi.php?type=1&id=988" alt="drawing" width="100"/>
+
+please do not exspect stable implementation unitl the first version v0.1 is ready 
 
 ## Licence
 

@@ -40,7 +40,8 @@ def active_cycles(n, snapshot):
     # copy original links
     orig_links = n.links.copy()
     # modify current links
-    n.links = n.links[n.links_t.p0.loc[snapshot].abs() >= 1e-8]
+    n.links.drop(index=n.links_t.p0.loc[snapshot].abs()
+                 [lambda x: x < 1e-8].index,  inplace=True)
     C = Cycles(n, update=True)
     # reassign original links
     n.links = orig_links
@@ -68,10 +69,11 @@ def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
     else:
         z = branches.eval(f'{r} + 1.j * {x}')
 
-    assert not (z.Line.max() == np.inf) | z.Line.isna().any(), (
-                'There seems to be a '
-               f'problem with your {x} or {r} values. At least one of these '
-               'is nan or inf. Please check the values in n.lines.')
+    if not n.lines.empty:
+        assert not (z.Line.max() == np.inf) | z.Line.isna().any(), (
+                    'There seems to be a '
+                   f'problem with your {x} or {r} values. At least one of these'
+                   ' is nan or inf. Please check the values in n.lines.')
     # experimental add pseudo impedance for links, in dependence on the current
     # flow:
     if ('Link' not in branch_components) | n.links.empty :
@@ -90,7 +92,7 @@ def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
     C_mix = C[((( C != 0) & (f != 0)).groupby(level=0, axis=1).any()).Link]
 
     if C_mix.empty:
-        omega = f[['Link']]
+        omega = pd.Series(1, f[['Link']].index)
     elif z.empty:
         omega = null(C_mix[['Link']] @ diag(f[['Link']]))[0]
     else:
@@ -98,7 +100,7 @@ def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
                 @ C_mix[['Line']] @ diag(z) @ f[['Line']]
 
     omega = omega.round(10) #numerical issues either
-    omega[(omega == 0) & (f[['Link']] != 0)] = (1/f).fillna(0)
+    omega[(omega == 0) & (f[['Link']] != 0)] = 1
     return pd.concat([z, omega]).loc[branch_components]\
              .rename_axis(['component', 'branch_i'])
 

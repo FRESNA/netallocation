@@ -17,7 +17,6 @@ from numpy import sign, conj, real
 import logging
 logger = logging.getLogger(__name__)
 
-from .breakdown import expand_by_sink_type, expand_by_source_type
 from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
                         branch_inflow, branch_outflow,
@@ -257,7 +256,7 @@ def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
     f = network_flow(n, snapshot, branch_components)
     p = K @ f
     p_plus = p.clip(lower=0)
-#   unbalanced flow from positive injection:
+    # unbalanced flow from positive injection:
     f_plus = H @ p_plus
     k_plus = (q * f - f_plus) / p_plus.sum()
     if normalized:
@@ -267,8 +266,12 @@ def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
     if per_bus:
         K = Incidence(n, branch_components=branch_components)
         Q = K @ Q.T
-        Q = (Q.rename_axis('source').rename_axis('sink', axis=1)
-             .stack().round(8)[lambda ds:ds != 0])
+        if q == 0.:
+            Q[Q <= 1e-8] = np.nan
+        elif q == 1:
+            Q[Q >= -1e-8] = np.nan
+        Q.values[np.diag_indices_from(Q)] = np.nan
+        Q = (Q.stack().rename_axis(['source', 'sink']))
     else:
         Q = (Q.rename_axis('bus')
              .rename_axis(['component', 'branch_i'], axis=1)
@@ -552,7 +555,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
 
 
 def flow_allocation(n, snapshots=None, method='Average participation',
-                    key=None, parallelized=False, nprocs=None, to_hdf=False,
+                    parallelized=False, nprocs=None, to_hdf=False,
                     round_floats=8, **kwargs):
     """
     Function to allocate the total network flow to buses. Available
