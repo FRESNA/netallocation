@@ -6,6 +6,7 @@ Created on Thu Mar  7 15:10:07 2019
 @author: fabian
 """
 
+import pandas as pd
 import logging
 logger = logging.getLogger(__name__)
 import pypsa
@@ -18,6 +19,10 @@ def upper(df):
 def lower(df):
     return df.clip(upper=0)
 
+
+def get_branches_i(n):
+    return pd.concat((n.df(c)[[]] for c in n.branch_components),
+                     keys=n.branch_components).index
 
 def last_to_first_level(ds):
     return ds.reorder_levels([ds.index.nlevels-1] + \

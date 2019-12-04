@@ -7,34 +7,39 @@ Created on Thu Mar  7 10:18:23 2019
 """
 
 import pandas as pd
+import xarray as xr
+from xarray import DataArray
 import numpy as np
 from pypsa.pf import find_cycles as find_cycles
 from .linalg import pinv, diag, null, upper, lower
+from .utils import get_branches_i
 import logging
 logger = logging.getLogger(__name__)
 
 
 
-def Incidence(n, branch_components=['Link', 'Line']):
-    buses = n.buses.index
-    return pd.concat([(n.df(c).assign(K=1).set_index('bus0', append=True)['K']
-                     .unstack().reindex(columns=buses).fillna(0).T)
-                     - (n.df(c).assign(K=1).set_index('bus1', append=True)['K']
-                     .unstack().reindex(columns=buses).fillna(0).T)
-                     for c in branch_components],
-                     keys=branch_components, axis=1, sort=False)\
-            .reindex(columns=n.branches().loc[branch_components].index)\
-            .rename_axis(columns=['component', 'branch_i'])
+def Incidence(n, branch_components=['Link', 'Line'], update=True):
+    if update or not '_incidence' in n.__dir__():
+        buses = n.buses.index
+        n._incidence = pd.concat([(n.df(c).assign(K=1).set_index('bus0', append=True)['K']
+                         .unstack().reindex(columns=buses).fillna(0).T)
+                         - (n.df(c).assign(K=1).set_index('bus1', append=True)['K']
+                         .unstack().reindex(columns=buses).fillna(0).T)
+                         for c in branch_components],
+                         keys=branch_components, axis=1, sort=False)\
+                .reindex(columns=n.branches().loc[branch_components].index)\
+                .rename_axis(columns=['component', 'branch_i'])
+    return n._incidence
+
 
 def Cycles(n, dense=True, update=True):
-    if (not 'C' in n.__dir__()) | update:
+    if (not '_C' in n.__dir__()) | update:
         find_cycles(n)
         if dense:
-            branches_i = n.branches()["bus0"].index
-            n.C = pd.DataFrame(n.C.todense(), index=branches_i)
-        return n.C.T
+            n._C = pd.DataFrame(n.C.todense(), index=get_branches_i(n))
+        return n._C.T
     else:
-        return n.C.T
+        return n._C.T
 
 def active_cycles(n, snapshot):
     # copy original links
@@ -51,30 +56,29 @@ def active_cycles(n, snapshot):
 
 
 def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
-              pu_system=True, linear=True):
+              pu_system=True, linear=True, skip_pre=True):
     #standard impedance
     x = 'x_pu' if pu_system else 'x'
     r = 'r_pu' if pu_system else 'r'
 
-    if pu_system and (n.lines[x] == 0).all():
-        n.calculate_dependent_values()
+    if not skip_pre:
+        if pu_system and (n.lines[x] == 0).all():
+            n.calculate_dependent_values()
 
-    branches = n.branches().assign(carrier=n.branches()\
-                           .bus0.map(n.buses.carrier))\
-                           .rename_axis(['component', 'branch_i'])\
-                           .reindex(branch_components, level=0)
-
+    comps = set(branch_components) & n.passive_branch_components
     if linear:
-        z = branches[x].where(branches.carrier == 'AC', branches[r])
+        z = pd.concat((c.df[x].where(c.df.bus0.map(n.buses.carrier) == 'AC',
+                    c.df[r]) for c in n.iterate_components(comps)), keys=comps)
     else:
-        z = branches.eval(f'{r} + 1.j * {x}')
+        z = pd.concat((c.df.eval(f'{r} + 1.j * {x}') for c in
+                      n.iterate_components(comps)), keys=comps)
 
     if not n.lines.empty:
         assert not (z.Line.max() == np.inf) | z.Line.isna().any(), (
                     'There seems to be a '
                    f'problem with your {x} or {r} values. At least one of these'
                    ' is nan or inf. Please check the values in n.lines.')
-    # experimental add pseudo impedance for links, in dependence on the current
+    # experimental: add pseudo impedance for links, in dependence on the current
     # flow:
     if ('Link' not in branch_components) | n.links.empty :
         return z
@@ -83,12 +87,8 @@ def impedance(n, branch_components=['Line', 'Link'], snapshot=None,
                         'snapshot given. Falling back to first snapshot')
         snapshot = n.snapshots[0]
 
-    z = z.reindex(set(branch_components) - {'Link'}, level=0)
-
     f = network_flow(n, snapshot)
-
     C = active_cycles(n, snapshot)
-
     C_mix = C[((( C != 0) & (f != 0)).groupby(level=0, axis=1).any()).Link]
 
     if C_mix.empty:
@@ -127,11 +127,13 @@ def shunt_admittance(n, pu_system=True):
     return 0.5 * K.abs() @ series_shunt + nodal_shunt
 
 
-def PTDF(n, branch_components=['Line'], snapshot=None, pu_system=True):
-    n.calculate_dependent_values()
-    K = Incidence(n, branch_components)
-    y = admittance(n, branch_components, snapshot, pu_system=pu_system)
-    return diag(y) @ K.T @ pinv(K @ diag(y) @ K.T)
+def PTDF(n, branch_components=['Line'], snapshot=None, pu_system=True, update=True):
+    if 'Link' in branch_components or update or '_ptdf' not in n.__dir__():
+        n.calculate_dependent_values()
+        K = Incidence(n, branch_components, update=False)
+        y = admittance(n, branch_components, snapshot, pu_system=pu_system)
+        n._ptdf = diag(y) @ K.T @ pinv(K @ diag(y) @ K.T)
+    return n._ptdf
 
 
 
@@ -192,11 +194,12 @@ def voltage(n, snapshots=None, linear=True, pu_system=True):
 
 
 
-def network_flow(n, snapshots=None, branch_components=['Link', 'Line'],
+def network_flow(n, snapshots=None,
+                 branch_components=['Link', 'Line', 'Transformer'],
                  ingoing=True, linear=True):
     snapshots = n.snapshots if snapshots is None else snapshots
     p = 'p0' if ingoing else 'p1'
-    f = pd.concat([n.pnl(b)[p] for b in branch_components], axis=1,
+    f = pd.concat([n.pnl(b)[p][n.df(b).index] for b in branch_components], axis=1,
                    keys=branch_components)\
                    .rename_axis(index='snapshot',
                                 columns=['component', 'branch_i'])\
@@ -251,27 +254,24 @@ def power_production(n, snapshots=None,
                      per_carrier=False, update=False):
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
-    if 'p_plus' not in n.buses_t or update:
-        n.buses_t.p_plus = (sum(n.pnl(c).p
-                            .mul(n.df(c).sign).T
-                            .clip(lower=0)
-                            .assign(bus=n.df(c).bus)
-                            .groupby('bus').sum()
-                            .reindex(index=n.buses.index, fill_value=0).T
-                            for c in components)
-                            .rename_axis('source', axis=1))
-    if 'p_plus_per_carrier' not in n.buses_t or update:
-        n.buses_t.p_plus_per_carrier = (
-                pd.concat([(n.pnl(c).p.T
-                            .assign(carrier=n.df(c).carrier, bus=n.df(c).bus)
-                            .groupby(['bus', 'carrier']).sum().T
-                            .where(lambda x: x > 0))
-                          for c in components], axis=1)
-                .rename_axis(['source', 'sourcetype'], axis=1))
-
-    if per_carrier:
+    if not per_carrier:
+        if 'p_plus' not in n.buses_t or update:
+            n.buses_t.p_plus = pd.concat(
+                    [n.pnl(c).p.clip(0).rename(columns=n.df(c).bus)
+                     for c in components], axis=1).sum(level=0, axis=1)\
+                    .reindex(columns=n.buses.index, fill_value=0)\
+                    .rename_axis('source', axis=1)
+        return n.buses_t.p_plus.reindex(snapshots)
+    else:
+        if 'p_plus_per_carrier' not in n.buses_t or update:
+            n.buses_t.p_plus_per_carrier = (
+                    pd.concat([(n.pnl(c).p.T
+                                .assign(carrier=n.df(c).carrier, bus=n.df(c).bus)
+                                .groupby(['bus', 'carrier']).sum().T
+                                .where(lambda x: x > 0))
+                              for c in components], axis=1)
+                    .rename_axis(['source', 'sourcetype'], axis=1))
         return n.buses_t.p_plus_per_carrier.reindex(snapshots)
-    return n.buses_t.p_plus.reindex(snapshots)
 
 
 def power_demand(n, snapshots=None,

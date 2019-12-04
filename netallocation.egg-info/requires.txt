@@ -1,2 +1,3 @@
 pypsa
 pandas>=0.24.0
+pyyaml

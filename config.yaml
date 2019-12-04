@@ -18,6 +18,7 @@ fuel_to_color:
     Natural Gas: red
     CCGT: red
     Coal: k
+    coal: k
     Hard Coal: dimgray
     Oil: darkgreen
     Other: silver
@@ -81,7 +82,7 @@ tech_colors:
     "helmeth" : "#a31597"
     "DAC" : "#d284ff"
     "co2 stored" : "#e5e5e5"
-    "CO2 sequestration" : "#e5e5e5" 
+    "CO2 sequestration" : "#e5e5e5"
     "battery" : "#b8ea04"
     "battery storage" : "#b8ea04"
     "Li ion" : "#b8ea04"
@@ -90,7 +91,7 @@ tech_colors:
     "transport fuel cell" : "#e884be"
     "retrofitting" : "#e0d6a8"
     "building retrofitting" : "#e0d6a8"
-    "heat pumps" : "#ff9768" 
+    "heat pumps" : "#ff9768"
     "heat pump" : "#ff9768"
     "air heat pump" : "#ffbea0"
     "ground heat pump" : "#ff7a3d"

@@ -10,6 +10,7 @@ Created on Wed Feb 21 12:14:49 2018
 
 from pypsa.descriptors import Dict
 import pandas as pd
+import xarray as xr
 import numpy as np
 from collections import Iterable
 import os
@@ -210,13 +211,14 @@ def _ap_normalized_to_dispatch(allocation, n, aggregated):
 
 
 def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
-                           per_bus=False, branch_components=['Link', 'Line']):
+                           vip=False, branch_components=['Link', 'Line']):
     '''
     Allocate line flows according to linear sensitvities of nodal power
     injection given by the changes in the power transfer distribution
     factors (PTDF)[1-3]. As the method is based on the DC-approximation,
     it works on subnetworks only as link flows are not taken into account.
-    Note that this method does not exclude counter flows.
+    Note that this method does not exclude counter flows. It return either a
+    Virtual Injection Pattern
 
     [1] F. J. Rubio-Oderiz, I. J. Perez-Arriaga, Marginal pricing of
         transmission services: a comparative analysis of network cost
@@ -243,11 +245,11 @@ def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
         If q is zero, only the impact of net load is taken into
         account. If q is one, only net generators are taken
         into account.
-    per_bus : Boolean, default True
+    vip : Boolean, default True
         Whether to return allocation on buses. Allocate to lines
         if False.
     normalized : Boolean, default False
-        Return the share of the source (sink) flow
+        Return the share of te allocated flow per line.
 
     '''
     snapshot = n.snapshots[0] if snapshot is None else snapshot
@@ -260,38 +262,26 @@ def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
     f_plus = H @ p_plus
     k_plus = (q * f - f_plus) / p_plus.sum()
     if normalized:
-        Q = H.add(k_plus, axis=0).mul(p, axis=1).div(f, axis=0).round(10).T
+        F = H.add(k_plus, axis=0).mul(p, axis=1).div(f, axis=0).fillna(0)
     else:
-        Q = H.add(k_plus, axis=0).mul(p, axis=1).round(10).T
-    if per_bus:
-        K = Incidence(n, branch_components=branch_components)
-        Q = K @ Q.T
-        if q == 0.:
-            Q[Q <= 1e-8] = np.nan
-        elif q == 1:
-            Q[Q >= -1e-8] = np.nan
-        Q.values[np.diag_indices_from(Q)] = np.nan
-        Q = (Q.stack().rename_axis(['source', 'sink']))
+        F = H.add(k_plus, axis=0).mul(p, axis=1).fillna(0)
+    if vip:
+        P = (K @ F).rename_axis(index='injection pattern', columns='bus')
+        return P
     else:
-        Q = (Q.rename_axis('bus')
-             .rename_axis(['component', 'branch_i'], axis=1)
-             .unstack()
-             .round(8)[lambda ds:ds != 0]
-             .reorder_levels(['bus', 'component', 'branch_i'])
-             .sort_index())
-    return pd.concat([Q], keys=[snapshot], names=['snapshot'])
+        return F
 
 
-def virtual_injection_pattern(n, snapshot=None, normalized=False, per_bus=False,
-                              downstream=True,
-                              branch_components=['Line', 'Link']):
+def equivalent_bilateral_exchanges(n, snapshot=None, normalized=False,
+                                   vip=False, q=0.5,
+                                   branch_components=['Line', 'Link']):
     """
     Sequentially calculate the load flow induced by individual
     power sources in the network ignoring other sources and scaling
     down sinks. The sum of the resulting flow of those virtual
     injection patters is the total network flow. This method matches
-    the 'Marginal participation' method with q = 1.
-
+    the 'Marginal participation' method for q = 1. Return either Virtual
+    Injection Patterns if vip is set to True, or Virtual Flow Patterns.
 
 
     Parameters
@@ -300,11 +290,12 @@ def virtual_injection_pattern(n, snapshot=None, normalized=False, per_bus=False,
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
-    per_bus : Boolean, default True
+    vip : Boolean, default True
         Whether to return allocation on buses. Allocate to lines
         if False.
     normalized : Boolean, default False
-        Return the share of the source (sink) flow
+        Return the share of te allocated flow per line, only effective when
+        vip is False.
 
     """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
@@ -313,35 +304,19 @@ def virtual_injection_pattern(n, snapshot=None, normalized=False, per_bus=False,
 
     f = network_flow(n, snapshot, branch_components)
     p = K @ f
-    p_plus = p.clip(lower=0)
-    p_minus = p.clip(upper=0)
-    if downstream:
-        indiag = diag(p_plus)
-        offdiag = (p_minus.to_frame().dot(p_plus.to_frame().T)
-                   .div(p_plus.sum()))
-    else:
-        indiag = diag(p_minus)
-        offdiag = (p_plus.to_frame().dot(p_minus.to_frame().T)
-                   .div(p_minus.sum()))
-    vip = indiag + offdiag
-    if per_bus:
-        Q = (vip[indiag.sum() == 0].T
-             .rename_axis('sink', axis=int(downstream))
-             .rename_axis('source', axis=int(not downstream))
-             .stack()[lambda ds:ds != 0]).abs()
-#        switch to counter stream by Q.swaplevel(0).sort_index()
-    else:
-        Q = H.dot(vip).round(10).T
+    p_plus = p.clip(lower=0).to_frame()
+    p_minus = p.clip(upper=0).to_frame()
+    gamma = p_plus.sum().sum()
+    P = (q * (diag(p_plus) + p_minus @ p_plus.T / gamma)
+         + (1 - q) * (diag(p_minus) - p_plus @ p_minus.T / gamma))\
+        .rename_axis(index='injection pattern', columns='bus')
+    if not vip:
+        F = (H @ P).rename_axis(columns='bus')
         if normalized:
-            # normalized colorvectors
-            Q /= f
-        Q = (Q.rename_axis('bus') \
-              .rename_axis(["component", 'branch_i'], axis=1)
-              .unstack().round(8)
-              .reorder_levels(['bus', 'component', 'branch_i'])
-              .sort_index()
-              [lambda ds: ds != 0])
-    return pd.concat([Q], keys=[snapshot], names=['snapshot'])
+            F = F.div(f, axis=0)
+        return F
+    else:
+        return P
 
 
 
@@ -556,7 +531,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
 
 def flow_allocation(n, snapshots=None, method='Average participation',
                     parallelized=False, nprocs=None, to_hdf=False,
-                    round_floats=8, **kwargs):
+                    as_xarray=True, round_floats=8, **kwargs):
     """
     Function to allocate the total network flow to buses. Available
     methods are 'Average participation' ('ap'), 'Marginal
@@ -588,7 +563,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
                 Allocate line flows according to linear sensitvities
                 of nodal power injection given by the changes in the
                 power transfer distribution factors (PTDF)
-            - 'Virtual injection pattern'/'vip'
+            - 'Equivalent bilateral exchanges'/'ebe'
                 Sequentially calculate the load flow induced by
                 individual power sources in the network ignoring other
                 sources and scaling down sinks.
@@ -605,11 +580,9 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         second object, 'cost', returns the corresponding cost derived
         from the flow allocation.
     """
-#    raise error if there are no flows
-
     snapshots = n.snapshots if snapshots is None else snapshots
     snapshots = snapshots if isinstance(snapshots, Iterable) else [snapshots]
-    if n.lines_t.p0.shape[0] == 0:
+    if n.lines_t.p0.empty:
         raise ValueError('Flows are not given by the network, '
                          'please solve the network flows first')
     n.calculate_dependent_values()
@@ -618,10 +591,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         method_func = average_participation
     elif method in ['Marginal participation', 'mp']:
         method_func = marginal_participation
-    elif method in ['Virtual injection pattern', 'vip']:
-        method_func = virtual_injection_pattern
-#    elif method in ['Minimal flow shares', 'mfs']:
-#        method_func = minimal_flow_shares
+    elif method in ['Equivalent bilateral exchanges', 'ebe']:
+        method_func = equivalent_bilateral_exchanges
     elif method in ['Zbus transmission', 'zbus']:
         method_func = zbus_transmission
     else:
@@ -665,9 +636,11 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     elif parallelized:
         flow = pd.concat(parmap(f, snapshots, nprocs=nprocs))
     else:
-        flow = pd.concat((f(sn) for sn in snapshots))
+        flow = pd.concat((f(sn) for sn in snapshots), keys=snapshots.rename('snapshot'))
     if round_floats is not None:
         flow = flow[flow.round(round_floats)!=0]
-    return flow.rename('allocation')
+    if as_xarray:
+        flow = xr.DataArray.from_series(flow.stack(), sparse=True).rename('allocation')
+    return flow
 
 

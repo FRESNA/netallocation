@@ -47,22 +47,6 @@ plt.rcParams['axes.edgecolor'] = plt.rcParams['grid.color']
 plt.rcParams.update(style_dict)
 
 fuel_colors = pd.Series(config['fuel_to_color'])
-fuel_colors.loc['Hydrogen Storage'] = 'crimson'
-fuel_colors.loc['Run-of-river'] = 'teal'
-fuel_colors.loc['Solar'] = 'yellowgreen'
-fuel_colors.loc['Run-of-River'] = fuel_colors.loc['Run-of-river']
-fuel_colors.loc['Pumped Hydro'] = fuel_colors.loc['Pumped hydro']
-
-#or :
-fuel_colors = pd.Series(config['tech_colors'])[nice_names.keys()]
-fuel_colors.index = fuel_colors.index.map(nice_names)
-fuel_colors = fuel_colors[~fuel_colors.index.duplicated()]
-fuel_colors.loc['Consumption'] = 'salmon'
-fuel_colors.loc['Pumped Hydro'] = 'forestgreen'
-fuel_colors.loc['Load'] = 'turquoise'
-fuel_colors.loc['Onshore'] = 'darkslateblue'
-
-fuel_colors = fuel_colors
 
 def make_legend_circles_for(sizes, scale=1.0, **kw):
     from matplotlib.patches import Circle

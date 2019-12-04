@@ -13,6 +13,17 @@ import cartopy.crs as ccrs
 import numpy as np
 from . import plot_helpers
 
+
+def replace_carrier_names(n, replace=None):
+    if replace is None: replace = plot_helpers.nice_names
+    n.loads = n.loads.assign(carrier='Load')
+    n.generators.carrier.replace(replace, inplace=True)
+    n.storage_units.carrier.replace(replace, inplace=True)
+    n.carriers = n.carriers.rename(index=replace)\
+                   [lambda ds: ~ds.index.duplicated()]
+
+
+
 def chord_diagram(allocation, agg='mean', minimum_quantile=0,
                   groups=None, size=200, pallette='Category20',
                   fig_inches=4):
@@ -195,9 +206,9 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4, figsize=(10, 5)
     line_colors = {'cur': "purple",
                    'exp': to_rgba("red", 0.5)}
 
-
     gen_sizes = n.generators.groupby(['bus', 'carrier']).p_nom_opt.sum()
-    store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()
+    store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()\
+                   .append(n.stores.groupby(['bus', 'carrier']).e_nom_opt.sum())
 
     branch_widths = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
                               keys=['Line', 'Link']).div(linewidth_factor)
@@ -266,12 +277,11 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4, figsize=(10, 5)
                   title='Transmission Exist./Exp.'))
 
     # legend generation colors
-    fig.add_artist(
-            fig.legend(*plot_helpers.handles_labels_for(
-                    plot_helpers.fuel_colors[n.generators.carrier.unique()]),
-               loc='upper left', bbox_to_anchor=(1, 1),
-               frameon=False,
-               title='Generation carrier'))
+    colors = plot_helpers.fuel_colors[n.generators.carrier.unique()]
+    fig.add_artist(fig.legend(*plot_helpers.handles_labels_for(colors),
+                              loc='upper left', bbox_to_anchor=(1, 1),
+                              frameon=False,
+                              title='Generation carrier'))
     # legend storage colors
     fig.add_artist(
             fig.legend(*plot_helpers.handles_labels_for(

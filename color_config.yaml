@@ -1,0 +1,16 @@
+
+# plotting config
+fuel_to_color:
+    AC lines: lightcoral
+    DC lines: lightblue
+    OCGT: indianred
+    Run-of-River: darkkhaki
+    Solar: '#FFD300'
+    Onshore: midnightblue
+    Offshore: steelblue
+    Hydro: mediumseagreen
+    Battery: orange
+    Hydrogen Storage: palevioletred
+    Pumped Hydro: forestgreen
+    Consumption: salmon
+    Load: turquoise
