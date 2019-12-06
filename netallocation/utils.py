@@ -20,9 +20,10 @@ def lower(df):
     return df.clip(upper=0)
 
 
-def get_branches_i(n):
-    return pd.concat((n.df(c)[[]] for c in n.branch_components),
-                     keys=n.branch_components).index
+def get_branches_i(n, branch_components=None):
+    if branch_components is None: branch_components = n.branch_components
+    return pd.concat((n.df(c)[[]] for c in branch_components),
+           keys=branch_components).index.rename(['component', 'branch_i'])
 
 def last_to_first_level(ds):
     return ds.reorder_levels([ds.index.nlevels-1] + \

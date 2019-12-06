@@ -7,8 +7,10 @@ Created on Thu Mar  7 10:17:46 2019
 """
 
 import pandas as pd
+from xarray import DataArray
 import numpy as np
 import scipy as sp
+from functools import reduce
 
 
 def upper(df):
@@ -19,39 +21,54 @@ def lower(df):
 
 
 def pinv(df):
-    return pd.DataFrame(np.linalg.pinv(df), df.columns, df.index)
+    return DataArray(np.linalg.pinv(df), df.T.coords)
 
 def inv(df, pre_clean=False):
     if pre_clean:
         zeros_b = df == 0
         zero_rows_b = zeros_b.all(1)
         zero_cols_b = zeros_b.all()
-        return pd.DataFrame(np.linalg.inv(df.loc[~zero_rows_b, ~zero_cols_b]),
-                            df.columns[~zero_cols_b], df.index[~zero_rows_b])\
-                            .reindex_like(df.T).fillna(0)
-    return pd.DataFrame(np.linalg.inv(df), df.columns, df.index)
+        subdf = df[~zero_rows_b, ~zero_cols_b]
+        return DataArray(np.linalg.inv(subdf), subdf.T.coords)\
+                        .reindex_like(df.T).fillna(0)
+    return DataArray(np.linalg.inv(df), df.T.coords)
 
+def mdot(df, df2):
+    dim0 = df.dims[0]
+    dim1 = df2.dims[-1]
+    res = df.values @ df2.values
+    if res.ndim == 1:
+        return DataArray(res, {dim0: df.coords.indexes[dim0]}, dim0)
+    return DataArray(res, {dim0: df.coords.indexes[dim0],
+                           dim1: df2.coords.indexes[dim1]}, (dim0, dim1))
+
+
+def mdots(*das):
+    """
+    Chaining matrix multiplication
+    """
+    return reduce(mdot, das)
 
 def null(df):
-    if df.empty:
+    if not df.size:
         return df
-    return pd.DataFrame(sp.linalg.null_space(df), index=df.columns)
+    dim = df.dims[-1]
+    return DataArray(pd.DataFrame(sp.linalg.null_space(df), index=df.get_index(dim)),
+                     dims=(dim, 'null_vectors'))
 
 
-def diag(df):
+def diag(da):
     """
     Convenience function to select diagonal from a square matrix, or to build
-    a diagonal matrix from a series.
+    a diagonal matrix from a 1 dimensional array.
 
     Parameters
     ----------
-    df : pandas.DataFrame or pandas.Series
+    da : xarray.DataArray
     """
-    if isinstance(df, pd.DataFrame):
-        if len(df.columns) == len(df.index) > 1:
-            return pd.DataFrame(np.diagflat(np.diag(df)), df.index, df.columns)
-    return pd.DataFrame(np.diagflat(df.values),
-                        index=df.index, columns=df.index)
+    if da.ndim == 1:
+        return DataArray(np.diag(da), dims=da.dims * 2, coords=da.coords)
+    return DataArray(np.diagflat(np.diag(da)), da.coords)
 
 
 
