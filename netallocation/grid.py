@@ -34,7 +34,7 @@ def Cycles(n, branches_i=None):
                           sorted(n.branch_components)})\
                         .rename(columns={'bus0': 'source', 'bus1': 'target'})
     if branches_i is None:
-        branches_i = branches.index
+        branches_i = branches.index.rename(['component', 'branch_i'])
     else:
         branches = branches.loc[branches_i]
     branches = branches.assign(index = branches_i)
@@ -67,29 +67,15 @@ def Cycles(n, branches_i=None):
                 C[b_i,c] = sign
                 c+=1
     return DataArray(C.todense(),  {'branch': branches_i, 'cycle': range(C.shape[1])},
-                    ('branch', 'cycle'))
+                    ('branch', 'cycle')).T
 
-
-def Cycles(n, update=True):
-    if (not '_C' in n.__dir__()) | update:
-        find_cycles(n)
-        n._C = DataArray(n.C.todense(), {'branch': get_branches_i(n),
-                         'cycle': range(n.C.shape[1])}, dims=['branch', 'cycle'])
-    return n._C.T
 
 def active_cycles(n, snapshot):
-    # copy original links
-#    if not isinstance(snapshot, (collections.Iterable, collections.Sequence)):
-#
-#
-    orig_links = n.links.copy()
-    # modify current links
-    n.links.drop(index=n.links_t.p0.loc[snapshot].abs()
-                 [lambda x: x < 1e-8].index,  inplace=True)
-    C = Cycles(n, update=True)
-    # reassign original links
-    n.links = orig_links
-    return C.reindex({'branch': get_branches_i(n)}, fill_value=0)
+    not_incuded_i = n.links_t.p0.loc[snapshot].abs()[lambda x: x < 1e-8].index
+    not_incuded_i = pd.MultiIndex.from_product([['Link'], not_incuded_i])
+    branches_i = get_branches_i(n).difference(not_incuded_i)\
+                    .rename(['component', 'branch_i'])
+    return Cycles(n, branches_i)
 
 
 def impedance(n, branch_components=None, snapshot=None,
@@ -137,10 +123,10 @@ def impedance(n, branch_components=None, snapshot=None,
     elif z.empty:
         omega = null(C_mix.sel(component='Link') * f.sel(component='Link'))[0]
     else:
-        omega = (- pinv(C_mix.sel(component='Link') * f.sel(component='Link'))
-                 .rename({'branch_i': 'link'})
-                 .dot(C_mix.sel(component='Line') * z.sel(component='Line'))
-                 @ f.sel(component='Line')).rename({'link': 'branch_i'})
+        omega = - mdots(
+                pinv(mdot(C_mix.sel(component='Link'), diag(f.sel(component='Link')))),
+                C_mix.sel(component='Line'), diag(z.sel(component='Line')),
+                f.sel(component='Line'))
 
     omega = omega.round(10).assign_coords({'component':'Link'})
     omega[(omega == 0) & (f.sel(component='Link') != 0)] = 1
@@ -182,7 +168,7 @@ def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
         n.calculate_dependent_values()
         K = Incidence(n, branch_components, update=False)
         y = admittance(n, branch_components, snapshot, pu_system=pu_system)
-        n._ptdf = diag(y) @ K.T @ pinv(K @ diag(y) @ K.T)
+        n._ptdf = mdots(diag(y), K.T, pinv(mdots(K, diag(y), K.T)))
     return n._ptdf
 
 
@@ -210,7 +196,7 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, snapshot, pu_system=pu_system,
                    linear=linear)
-    Y = (K * y).dot(K, dims='branch')
+    Y = mdots(K, diag(y), K.T)
     if linear:
         return Y
     else:
