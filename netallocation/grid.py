@@ -10,17 +10,17 @@ import pandas as pd
 import xarray as xr
 from xarray import DataArray
 import numpy as np
-from pypsa.pf import find_cycles as find_cycles
-from .linalg import pinv, diag, null, upper, lower, mdot, mdots
+from .linalg import pinv, diag, null, upper, lower, mdot, mdots, dot, dots
 from .utils import get_branches_i
 import logging
 import networkx as nx
 import scipy
+from collections import Sequence
 logger = logging.getLogger(__name__)
 
 
 
-def Incidence(n, branch_components=None, update=True):
+def Incidence(n, branch_components=None):
     return DataArray(n.incidence_matrix(branch_components).todense(),
               coords=(n.buses.index, get_branches_i(n, branch_components)),
               dims=['bus', 'branch']).sortby('component')
@@ -67,20 +67,12 @@ def Cycles(n, branches_i=None):
                 C[b_i,c] = sign
                 c+=1
     return DataArray(C.todense(),  {'branch': branches_i, 'cycle': range(C.shape[1])},
-                    ('branch', 'cycle')).T
-
-
-def active_cycles(n, snapshot):
-    not_incuded_i = n.links_t.p0.loc[snapshot].abs()[lambda x: x < 1e-8].index
-    not_incuded_i = pd.MultiIndex.from_product([['Link'], not_incuded_i])
-    branches_i = get_branches_i(n).difference(not_incuded_i)\
-                    .rename(['component', 'branch_i'])
-    return Cycles(n, branches_i)
+                    ('branch', 'cycle'))
 
 
 def impedance(n, branch_components=None, snapshot=None,
               pu_system=True, linear=True, skip_pre=True):
-    #standard impedance
+    #standard impedance, note z must not be inf or nan
     x = 'x_pu' if pu_system else 'x'
     r = 'r_pu' if pu_system else 'r'
 
@@ -90,53 +82,53 @@ def impedance(n, branch_components=None, snapshot=None,
 
     if branch_components is None:
         branch_components = n.passive_branch_components
-    comps = set(branch_components) & n.passive_branch_components
+    comps = sorted(set(branch_components) & n.passive_branch_components)
     if linear:
-        z = pd.concat({c.name: c.df[x].where(c.df.bus0.map(n.buses.carrier) == 'AC',
-                    c.df[r]) for c in n.iterate_components(comps)})
+        z = pd.concat([n.df(c)[x].where(n.df(c).bus0.map(n.buses.carrier) == 'AC',
+                    n.df(c)[r]) for c in comps], keys=comps)
     else:
-        z = pd.concat({c.name: c.df.eval(f'{r} + 1.j * {x}') for c in
-                      n.iterate_components(comps)})
+        z = pd.concat([n.df(c).eval(f'{r} + 1.j * {x}') for c in comps], keys=comps)
+    if not n.lines.empty:
+        assert not np.isinf(z).any() | z.isna().any(), ('There '
+        f'seems to be a problem with your {x} or {r} values. At least one of '
+        f'these is nan or inf. Please check the values in components {comps}.')
     z = DataArray(z.rename_axis(['component', 'branch_i']), dims='branch')
-#    if not n.lines.empty:
-#        assert not (z.max() == np.inf) | z.Line.isna().any(), (
-#                    'There seems to be a '
-#                   f'problem with your {x} or {r} values. At least one of these'
-#                   ' is nan or inf. Please check the values in n.lines.')
 
-    # add pseudo impedance for links, in dependence on the current flow:
     if ('Link' not in branch_components) | n.links.empty :
         return z
+
+    # add pseudo impedance for links, in dependence on the current flow:
     if snapshot is None:
         logger.warn('Link in argument "branch_components", but no '
                         'snapshot given. Falling back to first snapshot')
         snapshot = n.snapshots[0]
 
     f = network_flow(n, snapshot)
-    C = active_cycles(n, snapshot)
+    f_sub = f[abs(f) > 1e-8] # only branches with nonzero flow
+    z_sub = z.reindex_like(f_sub)
+    C = Cycles(n, f_sub.get_index('branch'))
     # C_mix is all the active cycles where at least one link is included
-    C_mix = C[(( C != 0) & (f != 0)).groupby('component').any()
-              .sel(component='Link', drop=True)]
+    C_mix = C[:, (C != 0).groupby('component').any().loc['Link'].values]
 
     if not C_mix.size:
-        omega = DataArray(1, f.sel(component='Link').coords)
-    elif z.empty:
-        omega = null(C_mix.sel(component='Link') * f.sel(component='Link'))[0]
+        omega = DataArray(1, f_sub.loc['Link'].coords)
+    elif not z.size:
+        omega = null(C_mix.loc['Link'] * f_sub.loc['Link'])[0]
     else:
-        omega = - mdots(
-                pinv(mdot(C_mix.sel(component='Link'), diag(f.sel(component='Link')))),
-                C_mix.sel(component='Line'), diag(z.sel(component='Line')),
-                f.sel(component='Line'))
+        d = {'branch': 'Link'}
+        omega = - mdot(pinv(mdot(C_mix.loc['Link'].T, diag(f_sub.loc['Link']))),
+           mdots(C_mix.drop_sel(d).T, diag(z_sub.drop_sel(d)), f_sub.drop_sel(d)))
 
-    omega = omega.round(10).assign_coords({'component':'Link'})
-    omega[(omega == 0) & (f.sel(component='Link') != 0)] = 1
-    omega = xr.concat([omega], dim='component').stack(branch=['component', 'branch_i'])
-    return xr.concat([z, omega], dim='branch')
+    omega = omega.round(15).assign_coords({'component':'Link'})
+    omega[(omega == 0) & (f_sub.loc['Link'] != 0)] = 1
+    Z = z.reindex_like(f).copy()
+    Z.loc['Link'] = omega.reindex_like(f.loc['Link'], fill_value=0)
+    return Z
 
 def admittance(n, branch_components=None, snapshot=None,
                pu_system=True, linear=True):
-    return (1/impedance(n, branch_components, snapshot, pu_system=pu_system,
-                        linear=linear))#.replace([np.inf, -np.inf], 0)
+    y = 1/impedance(n, branch_components, snapshot, pu_system, linear)
+    return y.where(~np.isinf(y), 0)
 
 
 def series_shunt_admittance(n, pu_system=True, branch_components=None):
@@ -166,9 +158,9 @@ def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
         branch_components = n.branch_components
     if 'Link' in branch_components or update or '_ptdf' not in n.__dir__():
         n.calculate_dependent_values()
-        K = Incidence(n, branch_components, update=False)
-        y = admittance(n, branch_components, snapshot, pu_system=pu_system)
-        n._ptdf = mdots(diag(y), K.T, pinv(mdots(K, diag(y), K.T)))
+        K = Incidence(n, branch_components)
+        Y = diag(admittance(n, branch_components, snapshot, pu_system=pu_system))
+        n._ptdf = mdots(Y, K.T, pinv(mdots(K, Y, K.T)))
     return n._ptdf
 
 
@@ -255,12 +247,12 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
     """
     if branch_components is None:
         branch_components = n.branch_components
-    branch_components = sorted(branch_components)
+    comps = sorted(branch_components)
     snapshots = n.snapshots if snapshots is None else snapshots
     p = 'p0' if ingoing else 'p1'
-    axis = int('__len__' in snapshots.__dir__())
-    f = pd.concat({b: n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in branch_components},
-                   axis=axis).rename_axis(['component', 'branch_i'], axis=axis)
+    axis = int(isinstance(snapshots, (list, pd.Index)))
+    f = pd.concat([n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps],
+             keys=comps, axis=axis).rename_axis(['component', 'branch_i'], axis=axis)
 
     f = DataArray(f, dims=['snapshot', 'branch']) if axis else DataArray(f, dims='branch')
     if linear:

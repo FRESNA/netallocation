@@ -33,9 +33,20 @@ def inv(df, pre_clean=False):
                         .reindex_like(df.T).fillna(0)
     return DataArray(np.linalg.inv(df), df.T.coords)
 
+def dot(df, df2):
+    return df.dot(df2, df.dims[-1])
+
+def dots(*das):
+    """
+    Chaining matrix multiplication
+    """
+    return reduce(dot, das)
+
+
 def mdot(df, df2):
     dim0 = df.dims[0]
     dim1 = df2.dims[-1]
+    assert df.get_index(df.dims[-1]).equals(df2.get_index(df2.dims[0]))
     res = df.values @ df2.values
     if res.ndim == 1:
         return DataArray(res, {dim0: df.coords.indexes[dim0]}, dim0)
