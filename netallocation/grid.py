@@ -14,6 +14,7 @@ from .linalg import pinv, diag, null, upper, lower, mdot, mdots, dot, dots
 from .utils import get_branches_i
 import logging
 import networkx as nx
+import pypsa
 import scipy
 from collections import Sequence
 logger = logging.getLogger(__name__)
@@ -36,10 +37,11 @@ def Cycles(n, branches_i=None):
     if branches_i is None:
         branches_i = branches.index.rename(['component', 'branch_i'])
     else:
-        branches = branches.loc[branches_i]
+        branches = branches.reindex(branches_i)
     branches = branches.assign(index = branches_i)
     branches_bus0 = branches['source']
-    mgraph = nx.from_pandas_edgelist(branches, edge_attr=True)
+    mgraph = nx.from_pandas_edgelist(branches, edge_attr=True,
+                                     create_using=nx.MultiGraph)
     graph = nx.OrderedGraph(mgraph)
     cycles = nx.cycle_basis(graph)
     #number of 2-edge cycles
@@ -48,30 +50,28 @@ def Cycles(n, branches_i=None):
     for j,cycle in enumerate(cycles):
         for i, start in enumerate(cycle):
             end = cycle[(i+1)%len(cycle)]
-            branch = mgraph[start][end]['index']
-            branch_i = branches.index.get_loc(branch)
-            sign = +1 if branches_bus0.iat[branch_i] == cycle[i] else -1
-            C[branch_i,j] += sign
+            branch = graph[start][end]['index']
+            sign = +1 if branches_bus0[branch] == cycle[i] else -1
+            C[branch, j] += sign
     #counter for multis
     c = len(cycles)
     #add multi-graph 2-edge cycles for multiple branches between same pairs of buses
     for u,v in graph.edges():
-        bs = list(mgraph[u][v].keys())
+        bs = list(mgraph[u][v].values())
         if len(bs) > 1:
-            first = bs[0]
-            first_i = branches_i.get_loc(first)
+            first = bs[0]['index']
             for b in bs[1:]:
-                b_i = branches_i.get_loc(b)
-                sign = -1 if branches_bus0.iat[b_i] == branches_bus0.iat[first_i] else +1
-                C[first_i,c] = 1
-                C[b_i,c] = sign
+                other = bs['index']
+                sign = -1 if branches_bus0[other] == branches_bus0[first] else +1
+                C[first, c] = 1
+                C[other, c] = sign
                 c+=1
     return DataArray(C.todense(),  {'branch': branches_i, 'cycle': range(C.shape[1])},
                     ('branch', 'cycle'))
 
 
 def impedance(n, branch_components=None, snapshot=None,
-              pu_system=True, linear=True, skip_pre=True):
+              pu_system=True, linear=True, skip_pre=False):
     #standard impedance, note z must not be inf or nan
     x = 'x_pu' if pu_system else 'x'
     r = 'r_pu' if pu_system else 'r'
@@ -104,23 +104,22 @@ def impedance(n, branch_components=None, snapshot=None,
         snapshot = n.snapshots[0]
 
     f = network_flow(n, snapshot)
-    f_sub = f[abs(f) > 1e-8] # only branches with nonzero flow
-    z_sub = z.reindex_like(f_sub)
-    C = Cycles(n, f_sub.get_index('branch'))
+    branches_i = f.get_index('branch')
+    C = Cycles(n, branches_i[abs(f).values > 1e-8]).reindex(branch=branches_i, fill_value=0)
     # C_mix is all the active cycles where at least one link is included
-    C_mix = C[:, (C != 0).groupby('component').any().loc['Link'].values]
+    C_mix = C[:, ((C != 0) & (f != 0)).groupby('component').any().loc['Link'].values]
 
     if not C_mix.size:
-        omega = DataArray(1, f_sub.loc['Link'].coords)
+        omega = DataArray(1, f.loc['Link'].coords)
     elif not z.size:
-        omega = null(C_mix.loc['Link'] * f_sub.loc['Link'])[0]
+        omega = null(C_mix.loc['Link'] * f.loc['Link'])[0]
     else:
         d = {'branch': 'Link'}
-        omega = - mdot(pinv(mdot(C_mix.loc['Link'].T, diag(f_sub.loc['Link']))),
-           mdots(C_mix.drop_sel(d).T, diag(z_sub.drop_sel(d)), f_sub.drop_sel(d)))
+        omega = - mdot(pinv(mdot(C_mix.loc['Link'].T, diag(f.loc['Link']))),
+           mdots(C_mix.drop_sel(d).T, diag(z), f.drop_sel(d)))
 
-    omega = omega.round(15).assign_coords({'component':'Link'})
-    omega[(omega == 0) & (f_sub.loc['Link'] != 0)] = 1
+    omega = omega.round(10).assign_coords({'component':'Link'})
+    omega[(omega == 0) & (f.loc['Link'] != 0)] = 1
     Z = z.reindex_like(f).copy()
     Z.loc['Link'] = omega.reindex_like(f.loc['Link'], fill_value=0)
     return Z

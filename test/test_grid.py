@@ -33,6 +33,16 @@ def test_branch_order():
             network_flow(n, snapshots=n.snapshots[0], branch_components=pbc)
             .get_index('branch'))
 
+def test_cycles():
+    C = ntl.grid.Cycles(n)
+    pypsa.pf.find_cycles(n)
+    assert_array_equal(C.values, n.C.todense())
+
+    C = ntl.grid.Cycles(n_large)
+    pypsa.pf.find_cycles(n_large)
+    assert_array_equal(C.values, n_large.C.todense())
+
+
 def test_pseudo_impedance_ac_dc():
     sn = n.snapshots[0]
     H = ntl.grid.PTDF(n, branch_components=n.branch_components, snapshot=sn)
@@ -58,6 +68,7 @@ def test_pseudo_impedance_ac_dc_large():
 if __name__ == '__main__':
     test_injection()
     test_branch_order()
+    test_cycles()
     test_pseudo_impedance_ac_dc()
     test_pseudo_impedance_dc()
     test_pseudo_impedance_ac_dc_large()
