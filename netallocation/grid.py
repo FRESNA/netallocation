@@ -50,8 +50,8 @@ def Cycles(n, branches_i=None):
     for j,cycle in enumerate(cycles):
         for i, start in enumerate(cycle):
             end = cycle[(i+1)%len(cycle)]
-            branch = graph[start][end]['index']
-            sign = +1 if branches_bus0[branch] == cycle[i] else -1
+            branch = branches_i.get_loc(graph[start][end]['index'])
+            sign = +1 if branches_bus0.iat[branch] == cycle[i] else -1
             C[branch, j] += sign
     #counter for multis
     c = len(cycles)
@@ -59,10 +59,10 @@ def Cycles(n, branches_i=None):
     for u,v in graph.edges():
         bs = list(mgraph[u][v].values())
         if len(bs) > 1:
-            first = bs[0]['index']
+            first = branches_i.get_loc(bs[0]['index'])
             for b in bs[1:]:
-                other = bs['index']
-                sign = -1 if branches_bus0[other] == branches_bus0[first] else +1
+                other = branches_i.get_loc(b['index'])
+                sign = -1 if branches_bus0.iat[other] == branches_bus0.iat[first] else +1
                 C[first, c] = 1
                 C[other, c] = sign
                 c+=1
@@ -110,7 +110,7 @@ def impedance(n, branch_components=None, snapshot=None,
     C_mix = C[:, ((C != 0) & (f != 0)).groupby('component').any().loc['Link'].values]
 
     if not C_mix.size:
-        omega = DataArray(1, f.loc['Link'].coords)
+        omega = DataArray(1, f[abs(f).values > 1e-8].loc['Link'].coords)
     elif not z.size:
         omega = null(C_mix.loc['Link'] * f.loc['Link'])[0]
     else:
