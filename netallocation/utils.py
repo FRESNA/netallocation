@@ -25,6 +25,12 @@ def get_branches_i(n, branch_components=None):
     return pd.concat((n.df(c)[[]] for c in branch_components),
            keys=branch_components).index.rename(['component', 'branch_i'])
 
+def get_branch_buses(n, branch_components=None):
+    if branch_components is None: branch_components = n.branch_components
+    return pd.concat((n.df(c)[['bus0', 'bus1']] for c in branch_components),
+           keys=branch_components, names=['component', 'branch_i'])
+
+
 def last_to_first_level(ds):
     return ds.reorder_levels([ds.index.nlevels-1] + \
                              list(range(ds.index.nlevels-1)))\

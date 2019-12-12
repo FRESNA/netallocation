@@ -14,10 +14,10 @@ from functools import reduce
 
 
 def upper(df):
-    return df.clip(lower=0)
+    return df.clip(min=0)
 
 def lower(df):
-    return df.clip(upper=0)
+    return df.clip(max=0)
 
 
 def pinv(df):
@@ -26,24 +26,28 @@ def pinv(df):
 def inv(df, pre_clean=False):
     if pre_clean:
         zeros_b = df == 0
-        zero_rows_b = zeros_b.all(1)
-        zero_cols_b = zeros_b.all()
-        subdf = df[~zero_rows_b, ~zero_cols_b]
-        return DataArray(np.linalg.inv(subdf), subdf.T.coords)\
-                        .reindex_like(df.T).fillna(0)
+        mask = tuple(df.get_index(d)[~zeros_b.all(d).values] for d in df.dims)
+        subdf = df.loc[mask]
+        return DataArray(np.linalg.inv(subdf), subdf.T.coords, subdf.dims[::-1])\
+                        .reindex(df.T.coords, fill_value=0)
     return DataArray(np.linalg.inv(df), df.T.coords)
 
-def dot(df, df2):
-    return df.dot(df2, df.dims[-1])
 
-def dots(*das):
+def dedup_axis(da, newdims):
     """
-    Chaining matrix multiplication
+    Helper function for DataArrays which have two dimensions using the same
+    coordinates (duplicate dimensions), like (bus, bus). This sets a new
+    DataArray with new names for the new coordinates.
     """
-    return reduce(dot, das)
+    oldindex = da.get_index(da.dims[0])
+    assert not isinstance(oldindex, pd.MultiIndex), ('Multiindex expanding not '
+                         'supported')
+    return DataArray(da.values, {newdims[0]: oldindex.rename(newdims[0]),
+                     newdims[1]: oldindex.rename(newdims[1])}, newdims)
 
 
-def mdot(df, df2):
+
+def _dot_single(df, df2):
     dim0 = df.dims[0]
     dim1 = df2.dims[-1]
     assert df.get_index(df.dims[-1]).equals(df2.get_index(df2.dims[0]))
@@ -54,11 +58,12 @@ def mdot(df, df2):
                            dim1: df2.coords.indexes[dim1]}, (dim0, dim1))
 
 
-def mdots(*das):
+def dot(*das):
     """
-    Chaining matrix multiplication
+    Perform a matrix-multiplication for two or more xarray.DataArrays. This is
+    different to the xarray dot-product which is a tensor-product
     """
-    return reduce(mdot, das)
+    return reduce(_dot_single, das)
 
 def null(df):
     if not df.size:
@@ -68,7 +73,7 @@ def null(df):
                      dims=(dim, 'null_vectors'))
 
 
-def diag(da):
+def diag(da, newdims=None):
     """
     Convenience function to select diagonal from a square matrix, or to build
     a diagonal matrix from a 1 dimensional array.
@@ -77,6 +82,10 @@ def diag(da):
     ----------
     da : xarray.DataArray
     """
+    if newdims is not None:
+        oldindex = da.get_index(da.dims[0])
+        return DataArray(np.diag(da), {newdims[0]: oldindex.rename(newdims[0]),
+                     newdims[1]: oldindex.rename(newdims[1])}, newdims)
     if da.ndim == 1:
         return DataArray(np.diag(da), dims=da.dims * 2, coords=da.coords)
     return DataArray(np.diagflat(np.diag(da)), da.coords)

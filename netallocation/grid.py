@@ -10,15 +10,12 @@ import pandas as pd
 import xarray as xr
 from xarray import DataArray
 import numpy as np
-from .linalg import pinv, diag, null, upper, lower, mdot, mdots, dot, dots
+from .linalg import pinv, diag, null, dot
 from .utils import get_branches_i
 import logging
 import networkx as nx
-import pypsa
 import scipy
-from collections import Sequence
 logger = logging.getLogger(__name__)
-
 
 
 def Incidence(n, branch_components=None):
@@ -115,8 +112,8 @@ def impedance(n, branch_components=None, snapshot=None,
         omega = null(C_mix.loc['Link'] * f.loc['Link'])[0]
     else:
         d = {'branch': 'Link'}
-        omega = - mdot(pinv(mdot(C_mix.loc['Link'].T, diag(f.loc['Link']))),
-           mdots(C_mix.drop_sel(d).T, diag(z), f.drop_sel(d)))
+        omega = - dot(pinv(dot(C_mix.loc['Link'].T, diag(f.loc['Link']))),
+           dot(C_mix.drop_sel(d).T, diag(z), f.drop_sel(d)))
 
     omega = omega.round(10).assign_coords({'component':'Link'})
     omega[(omega == 0) & (f.loc['Link'] != 0)] = 1
@@ -159,7 +156,7 @@ def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
         n.calculate_dependent_values()
         K = Incidence(n, branch_components)
         Y = diag(admittance(n, branch_components, snapshot, pu_system=pu_system))
-        n._ptdf = mdots(Y, K.T, pinv(mdots(K, Y, K.T)))
+        n._ptdf = dot(Y, K.T, pinv(dot(K, Y, K.T)))
     return n._ptdf
 
 
@@ -187,7 +184,7 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, snapshot, pu_system=pu_system,
                    linear=linear)
-    Y = mdots(K, diag(y), K.T)
+    Y = dot(K, diag(y), K.T)
     if linear:
         return Y
     else:
@@ -295,8 +292,7 @@ def network_injection(n, snapshots=None, branch_components=None):
     return (K.clip(min=0) @ f0 - K.clip(max=0) @ f1).T
 
 
-def power_production(n, snapshots=None,
-                     components=['Generator', 'StorageUnit'],
+def power_production(n, snapshots=None, components=['Generator', 'StorageUnit'],
                      per_carrier=False, update=False):
     if snapshots is None:
         snapshots = n.snapshots
@@ -318,11 +314,10 @@ def power_production(n, snapshots=None,
                     .rename_axis(columns=['bus', 'carrier'])
             n.buses_t.p_plus_per_carrier = DataArray(p, dims=['snapshot','p'])\
                                                     .unstack('p')
-    return n.buses_t.p_plus_per_carrier.reindex({'snapshot': snapshots})
+    return n.buses_t.p_plus_per_carrier.loc[snapshots]
 
 
-def power_demand(n, snapshots=None,
-                 components=['Load', 'StorageUnit'],
+def power_demand(n, snapshots=None, components=['Load', 'StorageUnit'],
                  per_carrier=False, update=False):
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
@@ -347,20 +342,19 @@ def power_demand(n, snapshots=None,
         n.loads = n.loads.drop(columns='carrier')
         n.buses_t.p_minus_per_carrier = DataArray(d, dims=['snapshot','d'])\
                                                   .unstack('d')
-    return n.buses_t.p_minus_per_carrier.reindex({'snapshot': snapshots})
+    return n.buses_t.p_minus_per_carrier.loc[snapshots]
 
 
-def self_consumption(n, snapshots=None, override=False):
+def self_consumption(n, snapshots=None, update=False):
     """
     Inspection for self consumed power, i.e. power that is not injected in the
     network and consumed by the bus itself
     """
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
-    if 'p_self' not in n.buses_t or override:
+    if 'p_self' not in n.buses_t or update:
         n.buses_t.p_self = (xr.concat([power_production(n, n.snapshots),
                                        power_demand(n, n.snapshots)], 'bus')
-                            .groupby('bus').min())
-    return n.buses_t.p_self.reindex({'snapshot': snapshots})
-
+                            .groupby('bus').min()).reindex({'bus': n.buses.index})
+    return n.buses_t.p_self.loc[snapshots]
 

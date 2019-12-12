@@ -8,9 +8,11 @@ Created on Wed Feb 21 12:14:49 2018
 
 # This side-package is created for use as flow and cost allocation.
 
+from .linalg import dot
 from pypsa.descriptors import Dict
 import pandas as pd
 import xarray as xr
+from xarray import DataArray, Dataset
 import numpy as np
 from collections import Iterable
 import os
@@ -22,12 +24,12 @@ from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
                         branch_inflow, branch_outflow,
                         PTDF, CISF, admittance, voltage, Ybus)
-from .linalg import diag, inv, pinv
-from .utils import parmap, upper, lower, last_to_first_level
+from .linalg import diag, inv, pinv, dedup_axis
+from .utils import parmap, upper, lower, last_to_first_level, get_branch_buses
 
-def average_participation(n, snapshot, per_bus=False, normalized=False,
-                          downstream=True, branch_components=['Line', 'Link'],
-                          aggregated=True):
+
+def average_participation(n, snapshot, dims=['source', 'sink'],
+                          branch_components=None, aggregated=True):
     """
     Allocate the network flow in according to the method 'Average
     participation' or 'Flow tracing' firstly presented in [1,2].
@@ -77,8 +79,8 @@ def average_participation(n, snapshot, per_bus=False, normalized=False,
         Whether to use downstream or upstream method.
 
     """
-    lower = lambda df: df.clip(upper=0)
-    upper = lambda df: df.clip(lower=0)
+    lower = lambda df: df.clip(max=0)
+    upper = lambda df: df.clip(min=0)
 
 
     f0 = network_flow(n, snapshot, branch_components)
@@ -86,56 +88,42 @@ def average_participation(n, snapshot, per_bus=False, normalized=False,
     f_in = f0.where(f0 > 0, - f1)
     f_out = f0.where(f0 < 0,  - f1)
 
-    p = network_injection(n, snapshot, branch_components).T
+    p = network_injection(n, snapshot, branch_components)
     if aggregated:
-        p_in = p.clip(lower=0)  # nodal inflow
-        p_out = - p.clip(upper=0)  # nodal outflow
+        p_in = upper(p).rename(bus='source')  # nodal inflow
+        p_out = - lower(p).rename(bus='sink')  # nodal outflow
     else:
-        p_in = power_production(n, [snapshot]).loc[snapshot]
-        p_out = power_demand(n, [snapshot]).loc[snapshot]
+        p_in = power_production(n, [snapshot]).loc[snapshot].rename(bus='source')
+        p_out = power_demand(n, [snapshot]).loc[snapshot].rename(bus='sink')
 
     K = Incidence(n, branch_components)
+    K_dir = K * sign(f_in)
 
-    K_dir = K @ diag(sign(f_in))
+    J = dot(lower(K_dir), diag(f_out), K.T) + np.diag(p_in)
+    Q = inv(J, True).pipe(dedup_axis, ('sink', 'source')) * p_in
+    J = dot(upper(K_dir), diag(f_in), K.T) + np.diag(p_out)
+    R = inv(J, True).pipe(dedup_axis, ('source', 'sink')) * p_out
 
-#    Tau = lower(K_loss_dir) * f @ K.T + diag(p_in)
-
-    Q = inv(lower(K_dir) @ diag(f_out) @ K.T + diag(p_in), pre_clean=True) \
-            @ diag(p_in)
-    R = inv(upper(K_dir) @ diag(f_in) @ K.T + diag(p_out), pre_clean=True) \
-            @ diag(p_out)
-
-
-    if not normalized and per_bus:
-        Q = diag(p_out) @ Q
-        R = diag(p_in) @ R
+    if not 'branch' in dims:
+        Q *= p_out
+        R *= p_in
         if aggregated:
             # add self-consumption
-            Q += diag(self_consumption(n, snapshot))
-            R += diag(self_consumption(n, snapshot))
+            Q += diag(self_consumption(n, snapshot), ('sink', 'source'))
+            R += diag(self_consumption(n, snapshot), ('source', 'sink'))
 
-    q = (Q.rename_axis('in').rename_axis('source', axis=1)
-         .replace(0, np.nan)
-         .stack().swaplevel(0)
-         .rename('upstream'))
+    Q = Q.assign_attrs(kind='peer-to-peer').where(Q != 0)
+    R = R.assign_attrs(kind='peer-to-peer').where(R != 0)
+    res = Dataset({'upstream': Q, 'downstream': R}, attrs={'method': 'Average Participation'})
 
-    r = (R.rename_axis('out').rename_axis('sink', axis=1)
-         .replace(0, np.nan)
-         .stack()
-         .rename('downstream'))
-
-    T = (pd.concat([q,r], axis=0, keys=['upstream', 'downstream'],
-                   names=['method', 'source', 'sink']).rename('allocation'))
-    T = pd.concat([T], keys=[snapshot], names=['snapshot'])
-
-    if per_bus:
-        if downstream is not None:
-            T = T.loc[:, 'downstream'] if downstream else T.loc[:, 'upstream']
-    else:
+    if 'branch' in dims:
         f = f_in if downstream else f_out
-        T = _ap_normalized_to_flow(T, n, branch_components, f=f,
-                                  normalized=normalized)
-    return T
+        branch_buses = get_branch_buses(n, branch_components)
+        In = branch_buses.bus0.where(f.values > 0, branch_buses.bus1)
+        Out = branch_buses.bus1.where(f.values > 0, branch_buses.bus0)
+        f = f.assign_coords({'in': ('branch', In)}).assign_coords({'out': ('branch', Out)})
+
+    return res
 
 
 def _ap_normalized_to_flow(allocation, n, branch_components, f=None,
