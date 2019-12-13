@@ -14,8 +14,6 @@ import pandas as pd
 import xarray as xr
 from xarray import DataArray, Dataset
 import numpy as np
-from collections import Iterable
-import os
 from numpy import sign, conj, real
 import logging
 logger = logging.getLogger(__name__)
@@ -25,11 +23,12 @@ from .grid import (self_consumption, power_demand, power_production,
                         branch_inflow, branch_outflow,
                         PTDF, CISF, admittance, voltage, Ybus)
 from .linalg import diag, inv, pinv, dedup_axis
-from .utils import parmap, upper, lower, last_to_first_level, get_branch_buses
+from .utils import parmap, upper, lower
 
 
 def average_participation(n, snapshot, dims=['source', 'sink'],
-                          branch_components=None, aggregated=True):
+                    branch_components=None, aggregated=True, downstream=True,
+                    include_self_consumption=True):
     """
     Allocate the network flow in according to the method 'Average
     participation' or 'Flow tracing' firstly presented in [1,2].
@@ -70,28 +69,40 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
-    per_bus : Boolean, default True
-        Whether to return allocation on buses. Allocate to lines
-        if False.
-    normalized : Boolean, default False
-        Return the share of the source (sink) flow
+    dims : list or string
+        list of dimensions to be included, if set to "all", the full dimensions
+        are calculated ['source', 'branch', 'sink']
     downstream : Boolean, default True
-        Whether to use downstream or upstream method.
-
+        Whether to use downstream or upstream method for performing the
+        flow-tracing.
+    aggregated: boolean, defaut True
+        Within the aggregated coupling scheme (obtained if set to True),
+        power production and demand are 'aggregated' within the corresponding
+        bus. Therefore only the net surplus or net deficit of a bus is
+        allocated to other buses.
+        Within the direct coupling scheme (if set to False), production and
+        demand are considered independent of the bus, therefore the power
+        production and demand are allocated to all buses at the same time.
+        Even if a bus has net deficit, its power production can be
+        allocated to other buses.
+    include_self_consumption: boolean, default True
+        Whether to include self consumption of each buses within the aggregated
+        coupling scheme.
     """
-    lower = lambda df: df.clip(max=0)
-    upper = lambda df: df.clip(min=0)
-
+    dims = ['source', 'branch', 'sink'] if dims == 'all' else dims
 
     f0 = network_flow(n, snapshot, branch_components)
     f1 = network_flow(n, snapshot, branch_components, ingoing=False)
     f_in = f0.where(f0 > 0, - f1)
     f_out = f0.where(f0 < 0,  - f1)
-
     p = network_injection(n, snapshot, branch_components)
+
+    filter_null = lambda da, dim: da.where(da != 0).dropna(dim, how='all')
+
     if aggregated:
-        p_in = upper(p).rename(bus='source')  # nodal inflow
-        p_out = - lower(p).rename(bus='sink')  # nodal outflow
+        # nodal inflow and nodal outflow
+        p_in = upper(p).rename(bus='source')#.pipe(filter_null, 'source')
+        p_out = - lower(p).rename(bus='sink')#.pipe(filter_null, 'sink')
     else:
         p_in = power_production(n, [snapshot]).loc[snapshot].rename(bus='source')
         p_out = power_demand(n, [snapshot]).loc[snapshot].rename(bus='sink')
@@ -99,107 +110,36 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
     K = Incidence(n, branch_components)
     K_dir = K * sign(f_in)
 
-    J = dot(lower(K_dir), diag(f_out), K.T) + np.diag(p_in)
-    Q = inv(J, True).pipe(dedup_axis, ('sink', 'source')) * p_in
-    J = dot(upper(K_dir), diag(f_in), K.T) + np.diag(p_out)
-    R = inv(J, True).pipe(dedup_axis, ('source', 'sink')) * p_out
+    J = inv(dot(lower(K_dir), diag(f_out), K.T) + np.diag(p_in), True)
+    Q = J.pipe(dedup_axis, ('sink', 'source')) * p_in
+    J = inv(dot(upper(K_dir), diag(f_in), K.T) + np.diag(p_out), True)
+    R = J.pipe(dedup_axis, ('source', 'sink')) * p_out
 
-    if not 'branch' in dims:
-        Q *= p_out
-        R *= p_in
-        if aggregated:
-            # add self-consumption
-            Q += diag(self_consumption(n, snapshot), ('sink', 'source'))
-            R += diag(self_consumption(n, snapshot), ('source', 'sink'))
+    Q = filter_null(Q, 'source')
+    R = filter_null(R, 'sink')
 
-    Q = Q.assign_attrs(kind='peer-to-peer').where(Q != 0)
-    R = R.assign_attrs(kind='peer-to-peer').where(R != 0)
-    res = Dataset({'upstream': Q, 'downstream': R}, attrs={'method': 'Average Participation'})
+    if downstream:
+        A, kind = Q * p_out, 'downstream'
+    else:
+        A, kind = R * p_in, 'upstream'
+
+    if aggregated and include_self_consumption:
+        selfcon = self_consumption(n, snapshot)
+        A += diag(selfcon, ('source', 'sink')).reindex_like(A)
+
+    res = A.to_dataset(name='peer_to_peer').assign_attrs(method='Average Participation')
 
     if 'branch' in dims:
         f = f_in if downstream else f_out
-        branch_buses = get_branch_buses(n, branch_components)
-        In = branch_buses.bus0.where(f.values > 0, branch_buses.bus1)
-        Out = branch_buses.bus1.where(f.values > 0, branch_buses.bus0)
-        f = f.assign_coords({'in': ('branch', In)}).assign_coords({'out': ('branch', Out)})
-
+        T = dot(diag(f), upper(K_dir.T), Q.fillna(0)) * \
+            dot(lower(K_dir.T), -R.fillna(0))
+        T = T.assign_attrs(kind=kind)
+        res = res.assign({'peer_on_branch_to_peer': T})
     return res
 
 
-def _ap_normalized_to_flow(allocation, n, branch_components, f=None,
-                          downstream=True, normalized=False):
-    """Helper function to extend normalized average participation bus-to-bus
-    allocation to line flow allocation. This function was pulled out of the
-    main function to enable it for multiple snapshots.
-    """
 
-    sns = allocation.index.unique('snapshot')
-    q = allocation.loc[:, 'upstream']\
-            .rename_axis(['snapshot', 'source', 'in']).rename('upstream')
-    r = allocation.loc[:, 'downstream']\
-            .rename_axis(['snapshot', 'out', 'sink']).rename('downstream')
-
-    if f is None:
-        if downstream:
-            f = branch_inflow(n, sns, branch_components)
-        else:
-            f = branch_outflow(n, sns, branch_components)
-    # add bus0 and  bus1 to index
-    f = pd.concat([f, n.branches().loc[branch_components, ['bus0', 'bus1']]],
-                   axis=1).rename_axis(index=['component', 'branch_i']) \
-           .set_index(['bus0', 'bus1'], append=True)\
-           .rename_axis(columns='snapshot').stack()\
-           .pipe(last_to_first_level)
-
-    # absolute flow with directions
-    f_dir = pd.concat(
-            [f[f > 0].rename_axis(index={'bus0':'in', 'bus1': 'out'}),
-             f[f < 0].swaplevel()
-                     .rename_axis(index={'bus0':'out', 'bus1': 'in'})])
-
-    if normalized:
-        f_dir = (f_dir.groupby(level=['snapshot', 'component', 'branch_i'])
-                 .transform(lambda ds: ds/ds.abs().sum()))
-    return ((q * f_dir).dropna() * r).dropna() \
-            .droplevel(['in', 'out'])\
-            .rename('allocation') \
-            .reorder_levels(['snapshot', 'source',  'sink',
-                             'component', 'branch_i'])
-
-
-def _ap_normalized_to_dispatch(allocation, n, aggregated):
-    """Helper function to scale normalized average participation bus-to-bus
-    allocation to real dispatch values. This function was created
-    to enable calculating multiple snapshots at once.
-    """
-    q = allocation.loc[:, 'downstream'].rename('upstream')
-    sns = q.index.unique('snapshot')
-    branch_components = ['Line', 'Link']
-    if aggregated:
-        p_in = network_injection(n, sns, branch_components=branch_components)\
-                .clip(lower=0).T.rename_axis('source')\
-                .unstack().rename('p_in')[lambda ds: ds!=0]
-    else:
-        p_in = power_production(n, sns).T.unstack().rename('p_in')
-
-    T =  (q * p_in).dropna()
-
-    if aggregated:
-        # add self-consumption
-        s = self_consumption(n, sns)
-        s = s.set_axis(pd.MultiIndex.from_tuples(zip(s.columns, s.columns)),
-                      axis=1, inplace=False) \
-             .rename_axis(['source', 'sink'], axis=1)\
-             .unstack().pipe(last_to_first_level) \
-             .rename('selfconsumption')\
-             [lambda ds: ds!=0]
-        T = T.append(s).sort_index(level=0)
-    return T.rename('allocation')
-
-
-
-def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
-                           vip=False, branch_components=['Link', 'Line']):
+def marginal_participation(n, snapshot=None, q=0.5, branch_components=None):
     '''
     Allocate line flows according to linear sensitvities of nodal power
     injection given by the changes in the power transfer distribution
@@ -233,11 +173,6 @@ def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
         If q is zero, only the impact of net load is taken into
         account. If q is one, only net generators are taken
         into account.
-    vip : Boolean, default True
-        Whether to return allocation on buses. Allocate to lines
-        if False.
-    normalized : Boolean, default False
-        Return the share of te allocated flow per line.
 
     '''
     snapshot = n.snapshots[0] if snapshot is None else snapshot
@@ -245,19 +180,16 @@ def marginal_participation(n, snapshot=None, q=0.5, normalized=False,
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, snapshot, branch_components)
     p = K @ f
-    p_plus = p.clip(lower=0)
+    p_plus = upper(p)
     # unbalanced flow from positive injection:
     f_plus = H @ p_plus
     k_plus = (q * f - f_plus) / p_plus.sum()
-    if normalized:
-        F = H.add(k_plus, axis=0).mul(p, axis=1).div(f, axis=0).fillna(0)
-    else:
-        F = H.add(k_plus, axis=0).mul(p, axis=1).fillna(0)
-    if vip:
-        P = (K @ F).rename_axis(index='injection pattern', columns='bus')
-        return P
-    else:
-        return F
+    F = (H + k_plus) * p
+#    pattr = {'dimension 0': 'bus', 'dimension 1': 'injection pattern'}
+    P = dot(K, F).pipe(dedup_axis, ('bus', 'injection_pattern'))
+    res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
+                  attrs={'method': 'Marginal Participation'})
+    return res
 
 
 def equivalent_bilateral_exchanges(n, snapshot=None, normalized=False,
@@ -289,22 +221,21 @@ def equivalent_bilateral_exchanges(n, snapshot=None, normalized=False,
     snapshot = n.snapshots[0] if snapshot is None else snapshot
     H = PTDF(n, branch_components=branch_components, snapshot=snapshot)
     K = Incidence(n, branch_components=branch_components)
-
-    f = network_flow(n, snapshot, branch_components)
+    f = network_flow(n, [snapshot], branch_components)
     p = K @ f
-    p_plus = p.clip(lower=0).to_frame()
-    p_minus = p.clip(upper=0).to_frame()
-    gamma = p_plus.sum().sum()
-    P = (q * (diag(p_plus) + p_minus @ p_plus.T / gamma)
-         + (1 - q) * (diag(p_minus) - p_plus @ p_minus.T / gamma))\
-        .rename_axis(index='injection pattern', columns='bus')
-    if not vip:
-        F = (H @ P).rename_axis(columns='bus')
-        if normalized:
-            F = F.div(f, axis=0)
-        return F
-    else:
-        return P
+    p_plus = upper(p)
+    p_minus = lower(p)
+    p_pl = p_plus.loc[:, snapshot] # same as one-dimensional
+    p_min = p_minus.loc[:, snapshot]
+    A = dot(p_minus, p_plus.T) / float(p_pl.sum())
+    B = dot(p_plus, p_minus.T) / float(p_pl.sum())
+    new_dims = ('bus', 'injection_pattern')
+    P = (q * (dedup_axis(A, new_dims) + diag(p_pl, new_dims))
+         + (q - 1) * (dedup_axis(B, new_dims) - diag(p_min, new_dims)) )
+    F = (H @ P).rename(injection_pattern='bus')
+    res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
+                  attrs={'method': 'Eqivalent Bilateral Exchanges'})
+    return res
 
 
 
@@ -515,7 +446,14 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
             .rename_axis('removed line')
             .rename('Network'))
 
-
+func_dict = {'Average participation': average_participation,
+             'ap': average_participation,
+             'Marginal participation': marginal_participation,
+             'mp': marginal_participation,
+             'Equivalent bilateral exchanges': equivalent_bilateral_exchanges,
+             'ebe': equivalent_bilateral_exchanges,
+             'Zbus transmission': zbus_transmission,
+             'zbus': zbus_transmission}
 
 def flow_allocation(n, snapshots=None, method='Average participation',
                     parallelized=False, nprocs=None, to_hdf=False,
@@ -568,67 +506,29 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         second object, 'cost', returns the corresponding cost derived
         from the flow allocation.
     """
-    snapshots = n.snapshots if snapshots is None else snapshots
-    snapshots = snapshots if isinstance(snapshots, Iterable) else [snapshots]
-    if n.lines_t.p0.empty:
-        raise ValueError('Flows are not given by the network, '
-                         'please solve the network flows first')
+    if all(c.pnl.p0.empty for c in n.iterate_components(n.branch_components)):
+        raise ValueError('Flows are not given by the network, please solve the '
+                         'network flows first')
     n.calculate_dependent_values()
 
-    if method in ['Average participation', 'ap']:
-        method_func = average_participation
-    elif method in ['Marginal participation', 'mp']:
-        method_func = marginal_participation
-    elif method in ['Equivalent bilateral exchanges', 'ebe']:
-        method_func = equivalent_bilateral_exchanges
-    elif method in ['Zbus transmission', 'zbus']:
-        method_func = zbus_transmission
-    else:
+    if method not in func_dict.keys():
         raise(ValueError('Method not implemented, please choose one out of'
-                         "['Average participation',"
-                           "'Marginal participation',"
-                           "'Virtual injection pattern',"
-                           "'Minimal flow shares',"
-                           "'Zbus transmission']"))
+                         f'{list(func_dict.keys())}'))
 
-    if snapshots is None:
-        snapshots = n.snapshots
-    if isinstance(snapshots, str):
-        snapshots = [snapshots]
+    if isinstance(snapshots, (str, pd.Timestamp)):
+        return func_dict[method](n, snapshots, **kwargs)
 
-    if parallelized and not to_hdf:
-        f = lambda sn: method_func(n, sn, **kwargs)
+    snapshots = n.snapshots if snapshots is None else snapshots
+
+    if parallelized:
+        f = lambda sn: func_dict[method](n, sn, **kwargs)
+        res = xr.concat(parmap(f, snapshots, nprocs=nprocs))
     else:
         def f(sn):
             if sn.is_month_start & (sn.hour == 0):
                 logger.info('Allocating for %s %s'%(sn.month_name(), sn.year))
-            return method_func(n, sn, **kwargs)
-
-
-    if to_hdf:
-        import random
-        hash = random.getrandbits(12)
-        store = '/tmp/temp{}.h5'.format(hash) if not isinstance(to_hdf, str) \
-                else to_hdf
-        periods = pd.period_range(snapshots[0], snapshots[-1], freq='m')
-        p_str = lambda p: '_t_' + str(p).replace('-', '')
-        for p in periods:
-            p_slicer = snapshots.slice_indexer(p.start_time, p.end_time)
-            gen = (f(sn) for sn in snapshots[p_slicer])
-            pd.concat(gen).to_hdf(store, p_str(p))
-
-        gen = (pd.read_hdf(store, p_str(p)) for p in periods)
-        flow = pd.concat(gen)
-        os.remove(store)
-
-    elif parallelized:
-        flow = pd.concat(parmap(f, snapshots, nprocs=nprocs))
-    else:
-        flow = pd.concat((f(sn) for sn in snapshots), keys=snapshots.rename('snapshot'))
-    if round_floats is not None:
-        flow = flow[flow.round(round_floats)!=0]
-    if as_xarray:
-        flow = xr.DataArray.from_series(flow.stack(), sparse=True).rename('allocation')
-    return flow
+            return func_dict[method](n, sn, **kwargs)
+        res = xr.concat((f(sn) for sn in snapshots), dim=snapshots.rename('snapshot'))
+    return res
 
 

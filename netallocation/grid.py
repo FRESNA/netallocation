@@ -303,7 +303,7 @@ def power_production(n, snapshots=None, components=['Generator', 'StorageUnit'],
                      for c in components], axis=1).sum(level=0, axis=1)\
                     .reindex(columns=n.buses.index, fill_value=0),
                     dims=['snapshot', 'bus'])
-        return n.buses_t.p_plus.reindex({'snapshot': snapshots})
+        return n.buses_t.p_plus.loc[snapshots]
     else:
         if 'p_plus_per_carrier' not in n.buses_t or update:
             p = pd.concat(((n.pnl(c).p.T.assign(carrier=n.df(c).carrier,
@@ -329,7 +329,7 @@ def power_demand(n, snapshots=None, components=['Load', 'StorageUnit'],
                         .reindex(index=n.buses.index, fill_value=0).T
                         for c in components).abs().rename_axis('sink', axis=1),
                     dims=['snapshot', 'bus'])
-        return n.buses_t.p_minus.reindex({'snapshot': snapshots})
+        return n.buses_t.p_minus.loc[snapshots]
 
     if 'p_minus_per_carrier' not in n.buses_t or update:
         if 'carrier' not in n.loads:

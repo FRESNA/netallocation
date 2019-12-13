@@ -7,12 +7,12 @@ Created on Thu Dec  5 11:21:05 2019
 """
 
 #import unittest
-from netallocation.grid import network_injection, Incidence, network_flow
+from netallocation.grid import (network_injection, Incidence, network_flow,
+                                power_production)
 import netallocation as ntl
 import xarray as xr
 import pypsa
 from numpy.testing import assert_allclose, assert_array_equal
-import numpy as np
 
 n = ntl.test.get_network_ac_dc()
 n_dc = ntl.test.get_network_pure_dc_link()
@@ -70,4 +70,54 @@ def test_pseudo_impedance_ac_dc_large():
     p = ntl.grid.network_injection(n_large, sn)
     f = ntl.grid.network_flow(n_large, sn)
     assert_allclose(H @ p, f, **tol_kwargs)
+
+def test_average_participation_aggregated():
+    sn = n.snapshots[0]
+    K = ntl.Incidence(n)
+    A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all')
+    #check total injection
+    total_injection = A.peer_to_peer.sum('sink')
+    target = power_production(n, sn).rename(bus='source').reindex_like(total_injection)
+    assert_allclose(total_injection, target, **tol_kwargs)
+
+    #check total flow for peer_on_branch_to_peer
+    total_flow = A.peer_on_branch_to_peer.sum(['source', 'sink'])
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+    #check ingoing flow for peer_on_branch_to_peer
+    sinkflow = A.peer_on_branch_to_peer.sum('source')
+    assert_allclose((sinkflow @ K).sum('sink'), network_injection(n, sn), **tol_kwargs)
+
+def test_average_participation_direct():
+    sn = n.snapshots[0]
+    K = ntl.Incidence(n)
+    A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all', aggregated=False)
+    #check total injection
+    total_injection = A.peer_to_peer.sum('sink')
+    target = power_production(n, sn).rename(bus='source').reindex_like(total_injection)
+    assert_allclose(total_injection, target, **tol_kwargs)
+
+    #check total flow for peer_on_branch_to_peer
+    total_flow = A.peer_on_branch_to_peer.sum(['source', 'sink'])
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+    #check ingoing flow for peer_on_branch_to_peer
+    sinkflow = A.peer_on_branch_to_peer.sum('source')
+    assert_allclose((sinkflow @ K).sum('sink'), network_injection(n, sn), **tol_kwargs)
+
+def test_marginal_participation():
+    sn = n.snapshots[0]
+    A = ntl.flow.flow_allocation(n, sn, method='mp')
+    total_injection = A.virtual_injection_pattern.sum('injection_pattern')
+    assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
+    total_flow = A.virtual_flow_pattern.sum('bus')
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+
+def test_eqivalent_bilateral_exchanges():
+    sn = n.snapshots[0]
+    A = ntl.flow.flow_allocation(n, sn, method='ebe')
+    total_injection = A.virtual_injection_pattern.sum('injection_pattern')
+    assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
+    total_flow = A.virtual_flow_pattern.sum('bus')
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+
+
 
