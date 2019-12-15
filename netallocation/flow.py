@@ -9,22 +9,22 @@ Created on Wed Feb 21 12:14:49 2018
 # This side-package is created for use as flow and cost allocation.
 
 from .linalg import dot
-from pypsa.descriptors import Dict
-import pandas as pd
-import xarray as xr
-from xarray import DataArray, Dataset
-import numpy as np
-from numpy import sign, conj, real
-import logging
-logger = logging.getLogger(__name__)
-
 from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
-                        branch_inflow, branch_outflow,
                         PTDF, CISF, admittance, voltage, Ybus)
 from .linalg import diag, inv, pinv, dedup_axis
 from .utils import parmap, upper, lower, filter_null, set_to_sparse
 
+from pypsa.descriptors import Dict
+import pandas as pd
+import xarray as xr
+from xarray import Dataset
+import numpy as np
+from numpy import sign, conj, real
+import logging
+from progressbar import ProgressBar
+
+logger = logging.getLogger(__name__)
 
 def average_participation(n, snapshot, dims=['source', 'sink'],
                     branch_components=None, aggregated=True, downstream=True,
@@ -518,6 +518,9 @@ def flow_allocation(n, snapshots=None, method='Average participation',
 
     snapshots = n.snapshots if snapshots is None else snapshots
 
+
+    pbar = ProgressBar()
+
     if sparse:
         def func(sn):
             return set_to_sparse(func_dict[method](n, sn, **kwargs))
@@ -528,13 +531,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     if parallelized:
         res = xr.concat(parmap(func, snapshots, nprocs=nprocs))
     else:
-#        def f(sn):
-#            if sn.is_month_start & (sn.hour == 0):
-#                logger.info('Allocating for %s %s'%(sn.month_name(), sn.year))
-#            return func_dict[method](n, sn, **kwargs)
-        res = xr.concat((func(sn) for sn in snapshots),
+        res = xr.concat((func(sn) for sn in pbar(snapshots)),
                         dim=snapshots.rename('snapshot'))
-#        res = [func(sn) for sn in snapshots]
     return res
 
 
