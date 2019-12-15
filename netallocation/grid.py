@@ -329,7 +329,7 @@ def power_demand(n, snapshots=None, components=['Load', 'StorageUnit'],
                         .reindex(index=n.buses.index, fill_value=0).T
                         for c in components).abs().rename_axis('sink', axis=1),
                     dims=['snapshot', 'bus'])
-        return n.buses_t.p_minus.loc[snapshots]
+        return n.buses_t.p_minus.reindex({'snapshot': snapshots})
 
     if 'p_minus_per_carrier' not in n.buses_t or update:
         if 'carrier' not in n.loads:

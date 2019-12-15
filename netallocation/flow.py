@@ -23,7 +23,7 @@ from .grid import (self_consumption, power_demand, power_production,
                         branch_inflow, branch_outflow,
                         PTDF, CISF, admittance, voltage, Ybus)
 from .linalg import diag, inv, pinv, dedup_axis
-from .utils import parmap, upper, lower
+from .utils import parmap, upper, lower, filter_null, set_to_sparse
 
 
 def average_participation(n, snapshot, dims=['source', 'sink'],
@@ -97,8 +97,6 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
     f_out = f0.where(f0 < 0,  - f1)
     p = network_injection(n, snapshot, branch_components)
 
-    filter_null = lambda da, dim: da.where(da != 0).dropna(dim, how='all')
-
     if aggregated:
         # nodal inflow and nodal outflow
         p_in = upper(p).rename(bus='source')#.pipe(filter_null, 'source')
@@ -115,8 +113,8 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
     J = inv(dot(upper(K_dir), diag(f_in), K.T) + np.diag(p_out), True)
     R = J.pipe(dedup_axis, ('source', 'sink')) * p_out
 
-    Q = filter_null(Q, 'source')
-    R = filter_null(R, 'sink')
+    Q = filter_null(Q)
+    R = filter_null(R)
 
     if downstream:
         A, kind = Q * p_out, 'downstream'
@@ -133,7 +131,7 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
         f = f_in if downstream else f_out
         T = dot(diag(f), upper(K_dir.T), Q.fillna(0)) * \
             dot(lower(K_dir.T), -R.fillna(0))
-        T = T.assign_attrs(kind=kind)
+        T = filter_null(T.assign_attrs(kind=kind), 'branch')
         res = res.assign({'peer_on_branch_to_peer': T})
     return res
 
@@ -456,8 +454,8 @@ func_dict = {'Average participation': average_participation,
              'zbus': zbus_transmission}
 
 def flow_allocation(n, snapshots=None, method='Average participation',
-                    parallelized=False, nprocs=None, to_hdf=False,
-                    as_xarray=True, round_floats=8, **kwargs):
+                    sparse=True, parallelized=False, nprocs=None,
+                    round_floats=8, **kwargs):
     """
     Function to allocate the total network flow to buses. Available
     methods are 'Average participation' ('ap'), 'Marginal
@@ -520,15 +518,23 @@ def flow_allocation(n, snapshots=None, method='Average participation',
 
     snapshots = n.snapshots if snapshots is None else snapshots
 
-    if parallelized:
-        f = lambda sn: func_dict[method](n, sn, **kwargs)
-        res = xr.concat(parmap(f, snapshots, nprocs=nprocs))
+    if sparse:
+        def func(sn):
+            return set_to_sparse(func_dict[method](n, sn, **kwargs))
     else:
-        def f(sn):
-            if sn.is_month_start & (sn.hour == 0):
-                logger.info('Allocating for %s %s'%(sn.month_name(), sn.year))
+        def func(sn):
             return func_dict[method](n, sn, **kwargs)
-        res = xr.concat((f(sn) for sn in snapshots), dim=snapshots.rename('snapshot'))
+
+    if parallelized:
+        res = xr.concat(parmap(func, snapshots, nprocs=nprocs))
+    else:
+#        def f(sn):
+#            if sn.is_month_start & (sn.hour == 0):
+#                logger.info('Allocating for %s %s'%(sn.month_name(), sn.year))
+#            return func_dict[method](n, sn, **kwargs)
+        res = xr.concat((func(sn) for sn in snapshots),
+                        dim=snapshots.rename('snapshot'))
+#        res = [func(sn) for sn in snapshots]
     return res
 
 

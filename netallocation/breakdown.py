@@ -7,11 +7,12 @@ Created on Thu Mar  7 15:38:24 2019
 """
 
 from .grid import self_consumption, power_demand, power_production, network_flow
+from .utils import set_to_sparse
 import pandas as pd
 
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
-                          cut_lower_share=1e-5):
+                          dim='source', cut_lower_share=1e-5, as_sparse=True):
     """
     Breakdown allocation into generation carrier type. These include carriers
     of all components specified by 'components'. Note that carrier names of all
@@ -36,19 +37,18 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     ap_carrier = pypsa.allocation.expand_by_carrier(ap, n)
 
     """
-    sns = ds.index.unique('snapshot')
-    share_per_bus_carrier = power_production(n, sns, per_carrier=True) \
-                              .div(power_production(n, sns), level='source').T \
-                              [lambda x: x>cut_lower_share] \
-                              .stack() \
-                              .reorder_levels(['snapshot', 'source',
-                                               'sourcetype'])
-    return (share_per_bus_carrier * ds).dropna().rename('allocation')
+    sns = ds.get_index('snapshot')
+    share = (power_production(n, sns, per_carrier=True) / power_production(n, sns))
+    share = share.rename(bus='source', carrier='source_carrier')
+    if as_sparse:
+        share = set_to_sparse(share)
+    return ds.assign({v: ds[v] * share for v in ds if 'peer' in v})\
+             .stack({'production': ('source', 'source_carrier')})
 
 
 
 def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
-                        cut_lower_share=1e-5):
+                        cut_lower_share=1e-5, as_sparse=True):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
     These include carriers of all components specified by 'components'. Note
@@ -73,12 +73,10 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     ap_carrier = pypsa.allocation.expand_by_carrier(ap, n)
 
     """
-    sns = ds.index.unique('snapshot')
-    share_per_bus_carrier = power_demand(n, sns, per_carrier=True) \
-                             .div(power_demand(n, sns), level='sink').T \
-                             [lambda x: x>cut_lower_share] \
-                             .stack() \
-                             .reorder_levels(['snapshot', 'sink', 'sinktype'])
-    return (share_per_bus_carrier * ds).dropna().rename('allocation')
-
-
+    sns = ds.get_index('snapshot')
+    share = (power_demand(n, sns, per_carrier=True) / power_demand(n, sns))
+    share = share.rename(bus='sink', carrier='sink_carrier')
+    if as_sparse:
+        share = set_to_sparse(share)
+    return ds.assign({v: ds[v] * share for v in ds if 'peer' in v})\
+             .stack({'demand': ('sink', 'sink_carrier')})

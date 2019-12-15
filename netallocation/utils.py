@@ -10,6 +10,8 @@ import pandas as pd
 import logging
 logger = logging.getLogger(__name__)
 import sparse
+import numpy as np
+import xarray as xr
 
 def upper(df):
     return df.clip(min=0)
@@ -23,15 +25,20 @@ def get_branches_i(n, branch_components=None):
     return pd.concat((n.df(c)[[]] for c in branch_components),
            keys=branch_components).index.rename(['component', 'branch_i'])
 
-#def get_branch_buses(n, branch_components=None):
-#    if branch_components is None: branch_components = n.branch_components
-#    return pd.concat((n.df(c)[['bus0', 'bus1']] for c in branch_components),
-#           keys=branch_components, names=['component', 'branch_i'])
+def filter_null(da, dim=None):
+    if dim is not None:
+        return da.where(da != 0).dropna(dim, how='all')
+    return da.where(da != 0)
 
-
-def set_to_sparse(da):
-    da.data = sparse.COO(da.data)
-    return da
+def set_to_sparse(ds):
+    if isinstance(ds, xr.Dataset):
+        for v in ds:
+            ds[v] = ds[v].fillna(0)
+            ds[v].data = sparse.COO.from_numpy(ds[v])
+    else:
+        ds = ds.fillna(0)
+        ds.data = sparse.COO.from_numpy(ds.data)
+    return ds
 
 def set_to_dense(da):
     da.data = da.data.todense()
