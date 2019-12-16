@@ -12,7 +12,7 @@ import pandas as pd
 
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
-                          dim='source', cut_lower_share=1e-5, as_sparse=True):
+                          dim='source', cut_lower_share=1e-5, sparse=True):
     """
     Breakdown allocation into generation carrier type. These include carriers
     of all components specified by 'components'. Note that carrier names of all
@@ -40,15 +40,14 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     sns = ds.get_index('snapshot')
     share = (power_production(n, sns, per_carrier=True) / power_production(n, sns))
     share = share.rename(bus='source', carrier='source_carrier')
-    if as_sparse:
-        share = as_sparse(share)
-    return ds.assign({v: ds[v] * share for v in ds if 'peer' in v})\
-             .stack({'production': ('source', 'source_carrier')})
+    if sparse:
+        share = as_sparse(share.fillna(0))
+    return (ds * share)#.stack({'production': ('source', 'source_carrier')})
 
 
 
 def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
-                        cut_lower_share=1e-5, as_sparse=True):
+                        cut_lower_share=1e-5, sparse=True):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
     These include carriers of all components specified by 'components'. Note
@@ -76,7 +75,6 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     sns = ds.get_index('snapshot')
     share = (power_demand(n, sns, per_carrier=True) / power_demand(n, sns))
     share = share.rename(bus='sink', carrier='sink_carrier')
-    if as_sparse:
-        share = as_sparse(share)
-    return ds.assign({v: ds[v] * share for v in ds if 'peer' in v})\
-             .stack({'demand': ('sink', 'sink_carrier')})
+    if sparse:
+        share = as_sparse(share.fillna(0))
+    return (ds * share)#.stack({'demand': ('sink', 'sink_carrier')})

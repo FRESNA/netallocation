@@ -316,7 +316,7 @@ def power_production(n, snapshots=None, components=['Generator', 'StorageUnit'],
                             for c in components), axis=1)\
                     .rename_axis(columns=['bus', 'carrier'])
             n.buses_t.p_plus_per_carrier = DataArray(p, dims=['snapshot','p'])\
-                                                    .unstack('p')
+                                            .unstack('p').reindex(bus=n.buses.index)
     return n.buses_t.p_plus_per_carrier.loc[snapshots]
 
 
@@ -344,7 +344,7 @@ def power_demand(n, snapshots=None, components=['Load', 'StorageUnit'],
                 .rename_axis(['bus', 'carrier'], axis=1))
         n.loads = n.loads.drop(columns='carrier')
         n.buses_t.p_minus_per_carrier = DataArray(d, dims=['snapshot','d'])\
-                                                  .unstack('d')
+                                          .unstack('d').reindex(bus=n.buses.index)
     return n.buses_t.p_minus_per_carrier.loc[snapshots]
 
 
