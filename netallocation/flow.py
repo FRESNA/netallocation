@@ -13,7 +13,7 @@ from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
                         PTDF, CISF, admittance, voltage, Ybus)
 from .linalg import diag, inv, pinv, dedup_axis
-from .utils import parmap, upper, lower, filter_null, set_to_sparse
+from .utils import parmap, upper, lower, filter_null, as_sparse
 
 from pypsa.descriptors import Dict
 import pandas as pd
@@ -521,7 +521,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
 
     if sparse:
         def func(sn):
-            return set_to_sparse(func_dict[method](n, sn, **kwargs))
+            return as_sparse(func_dict[method](n, sn, **kwargs))
     else:
         def func(sn):
             return func_dict[method](n, sn, **kwargs)

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 import sparse
 import numpy as np
 import xarray as xr
+from sparse import as_coo
 
 def upper(df):
     return df.clip(min=0)
@@ -30,19 +31,23 @@ def filter_null(da, dim=None):
         return da.where(da != 0).dropna(dim, how='all')
     return da.where(da != 0)
 
-def set_to_sparse(ds):
-    if isinstance(ds, xr.Dataset):
-        for v in ds:
-            ds[v] = ds[v].fillna(0)
-            ds[v].data = sparse.COO.from_numpy(ds[v])
-    else:
-        ds = ds.fillna(0)
-        ds.data = sparse.COO.from_numpy(ds.data)
-    return ds
+def array_as_sparse(da):
+    return da.copy(data=as_coo(da.data))
 
-def set_to_dense(da):
-    da.data = da.data.todense()
-    return da
+def as_sparse(ds):
+    if isinstance(ds, xr.Dataset):
+        return ds.assign(**{k: array_as_sparse(ds[k]) for k in ds})
+    else:
+        return array_as_sparse(ds)
+
+def array_as_dense(da):
+    return da.copy(data=da.data.todense())
+
+def as_dense(ds):
+    if isinstance(ds, xr.Dataset):
+        return ds.assign(**{k: array_as_dense(ds[k]) for k in ds})
+    else:
+        return array_as_dense(ds)
 
 
 def parmap(f, arg_list, nprocs=None, **kwargs):

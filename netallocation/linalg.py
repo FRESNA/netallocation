@@ -26,7 +26,7 @@ def pinv(df):
 def inv(df, pre_clean=False):
     if pre_clean:
         zeros_b = df == 0
-        mask = tuple(df.get_index(d)[~zeros_b.all(d).values] for d in df.dims)
+        mask = tuple(df.get_index(d)[~zeros_b.all(d).data] for d in df.dims)
         subdf = df.loc[mask]
         return DataArray(np.linalg.inv(subdf), subdf.T.coords, subdf.dims[::-1])\
                         .reindex(df.T.coords, fill_value=0)
@@ -42,7 +42,7 @@ def dedup_axis(da, newdims):
     oldindex = da.get_index(da.dims[0])
     assert not isinstance(oldindex, pd.MultiIndex), ('Multiindex expanding not '
                          'supported')
-    return DataArray(da.values, {newdims[0]: oldindex.rename(newdims[0]),
+    return DataArray(da.data, {newdims[0]: oldindex.rename(newdims[0]),
                      newdims[1]: oldindex.rename(newdims[1])}, newdims)
 
 
@@ -51,7 +51,7 @@ def _dot_single(df, df2):
     dim0 = df.dims[0]
     dim1 = df2.dims[-1]
     assert df.get_index(df.dims[-1]).equals(df2.get_index(df2.dims[0]))
-    res = df.values @ df2.values
+    res = df.data @ df2.data
     if res.ndim == 1:
         return DataArray(res, {dim0: df.coords.indexes[dim0]}, dim0)
     return DataArray(res, {dim0: df.coords.indexes[dim0],
