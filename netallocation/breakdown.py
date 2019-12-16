@@ -7,7 +7,7 @@ Created on Thu Mar  7 15:38:24 2019
 """
 
 from .grid import self_consumption, power_demand, power_production, network_flow
-from .utils import set_to_sparse
+from .utils import as_sparse
 import pandas as pd
 
 
@@ -41,7 +41,7 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     share = (power_production(n, sns, per_carrier=True) / power_production(n, sns))
     share = share.rename(bus='source', carrier='source_carrier')
     if as_sparse:
-        share = set_to_sparse(share)
+        share = as_sparse(share)
     return ds.assign({v: ds[v] * share for v in ds if 'peer' in v})\
              .stack({'production': ('source', 'source_carrier')})
 
@@ -77,6 +77,6 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     share = (power_demand(n, sns, per_carrier=True) / power_demand(n, sns))
     share = share.rename(bus='sink', carrier='sink_carrier')
     if as_sparse:
-        share = set_to_sparse(share)
+        share = as_sparse(share)
     return ds.assign({v: ds[v] * share for v in ds if 'peer' in v})\
              .stack({'demand': ('sink', 'sink_carrier')})
