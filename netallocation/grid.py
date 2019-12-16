@@ -250,7 +250,10 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
     f = pd.concat([n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps],
              keys=comps, axis=axis).rename_axis(['component', 'branch_i'], axis=axis)
 
-    f = DataArray(f, dims=['snapshot', 'branch']) if axis else DataArray(f, dims='branch')
+    if axis:
+        f = DataArray(f, dims=['snapshot', 'branch'])
+    else:
+        f = DataArray(f, dims='branch').assign_coords(snapshot=snapshots)
     if linear:
         return f
     else:

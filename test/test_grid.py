@@ -12,7 +12,10 @@ from netallocation.grid import (network_injection, Incidence, network_flow,
 import netallocation as ntl
 import xarray as xr
 import pypsa
-from numpy.testing import assert_allclose, assert_array_equal
+from xarray.testing import assert_allclose, assert_equal
+from numpy.testing import assert_allclose as np_assert_allclose, \
+                        assert_array_equal as np_assert_equal
+
 
 n = ntl.test.get_network_ac_dc()
 n_dc = ntl.test.get_network_pure_dc_link()
@@ -22,15 +25,15 @@ tol_kwargs = dict(atol=1e-5, rtol=1)
 
 def test_injection():
     comps = n.passive_branch_components
-    assert_allclose(network_injection(n, branch_components=comps).values,
+    np_assert_allclose(network_injection(n, branch_components=comps).values,
                     n.buses_t.p.values, **tol_kwargs)
 
 def test_branch_order():
-    assert_array_equal(Incidence(n).get_index('branch'),
+    np_assert_equal (Incidence(n).get_index('branch'),
             network_flow(n, snapshots=n.snapshots[0]).get_index('branch'))
 
     pbc = n.passive_branch_components
-    assert_array_equal(Incidence(n, branch_components=pbc).get_index('branch'),
+    np_assert_equal (Incidence(n, branch_components=pbc).get_index('branch'),
             network_flow(n, snapshots=n.snapshots[0], branch_components=pbc)
             .get_index('branch'))
 
@@ -77,7 +80,7 @@ def test_average_participation_aggregated():
     A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all')
     #check total injection
     total_injection = A.peer_to_peer.sum('sink')
-    target = power_production(n, sn).rename(bus='source').reindex_like(total_injection)
+    target = power_production(n, sn).rename(bus='source')
     assert_allclose(total_injection, target, **tol_kwargs)
 
     #check total flow for peer_on_branch_to_peer
@@ -93,7 +96,7 @@ def test_average_participation_direct():
     A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all', aggregated=False)
     #check total injection
     total_injection = A.peer_to_peer.sum('sink')
-    target = power_production(n, sn).rename(bus='source').reindex_like(total_injection)
+    target = power_production(n, sn).rename(bus='source')
     assert_allclose(total_injection, target, **tol_kwargs)
 
     #check total flow for peer_on_branch_to_peer

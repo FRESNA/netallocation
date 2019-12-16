@@ -26,7 +26,7 @@ from progressbar import ProgressBar
 
 logger = logging.getLogger(__name__)
 
-def average_participation(n, snapshot, dims=['source', 'sink'],
+def average_participation(n, snapshot, dims='all',
                     branch_components=None, aggregated=True, downstream=True,
                     include_self_consumption=True):
     """
@@ -113,9 +113,6 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
     J = inv(dot(upper(K_dir), diag(f_in), K.T) + np.diag(p_out), True)
     R = J.pipe(dedup_axis, ('source', 'sink')) * p_out
 
-    Q = filter_null(Q)
-    R = filter_null(R)
-
     if downstream:
         A, kind = Q * p_out, 'downstream'
     else:
@@ -130,8 +127,8 @@ def average_participation(n, snapshot, dims=['source', 'sink'],
     if 'branch' in dims:
         f = f_in if downstream else f_out
         T = dot(diag(f), upper(K_dir.T), Q.fillna(0)) * \
-            dot(lower(K_dir.T), -R.fillna(0))
-        T = filter_null(T.assign_attrs(kind=kind), 'branch')
+            dot(lower(K_dir.T), -R.fillna(0))\
+            .assign_coords(snapshot=snapshot).assign_attrs(kind=kind)
         res = res.assign({'peer_on_branch_to_peer': T})
     return res
 
@@ -230,6 +227,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, normalized=False,
     new_dims = ('bus', 'injection_pattern')
     P = (q * (dedup_axis(A, new_dims) + diag(p_pl, new_dims))
          + (q - 1) * (dedup_axis(B, new_dims) - diag(p_min, new_dims)) )
+    P = P.assign_coords(snapshot = snapshot)
     F = (H @ P).rename(injection_pattern='bus')
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Eqivalent Bilateral Exchanges'})
