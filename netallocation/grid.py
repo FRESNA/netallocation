@@ -12,16 +12,21 @@ from xarray import DataArray
 import numpy as np
 from .linalg import pinv, diag, null, dot
 from .utils import get_branches_i
+from sparse import as_coo
 import logging
 import networkx as nx
 import scipy
 logger = logging.getLogger(__name__)
 
 
-def Incidence(n, branch_components=None):
-    return DataArray(n.incidence_matrix(branch_components).todense(),
-              coords=(n.buses.index, get_branches_i(n, branch_components)),
-              dims=['bus', 'branch']).sortby('component')
+def Incidence(n, branch_components=None, sparse=False):
+    if sparse:
+        K = as_coo(n.incidence_matrix(branch_components))
+    else:
+        K = n.incidence_matrix(branch_components).todense()
+    return DataArray(K, coords=(n.buses.index,
+                                get_branches_i(n, branch_components)),
+                     dims=['bus', 'branch']).sortby('component')
 
 def Cycles(n, branches_i=None):
     """
@@ -315,8 +320,9 @@ def power_production(n, snapshots=None, components=['Generator', 'StorageUnit'],
                             .where(lambda x: x > 0))
                             for c in components), axis=1)\
                     .rename_axis(columns=['bus', 'carrier'])
-            n.buses_t.p_plus_per_carrier = DataArray(p, dims=['snapshot','p'])\
-                                            .unstack('p').reindex(bus=n.buses.index)
+            n.buses_t.p_plus_per_carrier = \
+                DataArray(p, dims=['snapshot','p']).unstack('p')\
+                    .reindex(bus=n.buses.index, fill_value=0)
     return n.buses_t.p_plus_per_carrier.loc[snapshots]
 
 
@@ -343,8 +349,9 @@ def power_demand(n, snapshots=None, components=['Load', 'StorageUnit'],
                 .where(lambda x: x < 0)) for c in components], axis=1)
                 .rename_axis(['bus', 'carrier'], axis=1))
         n.loads = n.loads.drop(columns='carrier')
-        n.buses_t.p_minus_per_carrier = DataArray(d, dims=['snapshot','d'])\
-                                          .unstack('d').reindex(bus=n.buses.index)
+        n.buses_t.p_minus_per_carrier = \
+            DataArray(d, dims=['snapshot','d']).unstack('d')\
+                .reindex(bus=n.buses.index, fill_value=0)
     return n.buses_t.p_minus_per_carrier.loc[snapshots]
 
 
@@ -358,6 +365,7 @@ def self_consumption(n, snapshots=None, update=False):
     if 'p_self' not in n.buses_t or update:
         n.buses_t.p_self = (xr.concat([power_production(n, n.snapshots),
                                        power_demand(n, n.snapshots)], 'bus')
-                            .groupby('bus').min()).reindex({'bus': n.buses.index})
+                            .groupby('bus').min()
+                            .reindex(bus=n.buses.index, fill_value=0))
     return n.buses_t.p_self.loc[snapshots]
 

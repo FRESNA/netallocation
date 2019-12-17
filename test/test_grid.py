@@ -9,6 +9,7 @@ Created on Thu Dec  5 11:21:05 2019
 #import unittest
 from netallocation.grid import (network_injection, Incidence, network_flow,
                                 power_production)
+from netallocation.utils import as_dense
 import netallocation as ntl
 import xarray as xr
 import pypsa
@@ -106,6 +107,8 @@ def test_average_participation_direct():
     sinkflow = A.peer_on_branch_to_peer.sum('source')
     assert_allclose((sinkflow @ K).sum('sink'), network_injection(n, sn), **tol_kwargs)
 
+
+
 def test_marginal_participation():
     sn = n.snapshots[0]
     A = ntl.flow.flow_allocation(n, sn, method='mp')
@@ -123,4 +126,9 @@ def test_eqivalent_bilateral_exchanges():
     assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
 
 
+def test_average_participation_sparse():
+    sn = n.snapshots[0]
+    A_sp = ntl.flow.flow_allocation(n, sn, method='ap', dims='all', sparse=True)
+    A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all', sparse=False)
+    assert_allclose(as_dense(A_sp), A, **tol_kwargs)
 

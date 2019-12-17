@@ -13,7 +13,7 @@ from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
                         PTDF, CISF, admittance, voltage, Ybus)
 from .linalg import diag, inv, pinv, dedup_axis
-from .utils import parmap, upper, lower, filter_null, as_sparse
+from .utils import parmap, upper, lower, as_sparse
 
 from pypsa.descriptors import Dict
 import pandas as pd
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def average_participation(n, snapshot, dims='all',
                     branch_components=None, aggregated=True, downstream=True,
-                    include_self_consumption=True):
+                    include_self_consumption=True, sparse=False):
     """
     Allocate the network flow in according to the method 'Average
     participation' or 'Flow tracing' firstly presented in [1,2].
@@ -88,6 +88,9 @@ def average_participation(n, snapshot, dims='all',
     include_self_consumption: boolean, default True
         Whether to include self consumption of each buses within the aggregated
         coupling scheme.
+    sparse: boolean, default False
+        Whether to compute the allocation with sparse arrays, this can save
+        time for large networks
     """
     dims = ['source', 'branch', 'sink'] if dims == 'all' else dims
 
@@ -99,19 +102,22 @@ def average_participation(n, snapshot, dims='all',
 
     if aggregated:
         # nodal inflow and nodal outflow
-        p_in = upper(p).rename(bus='source')#.pipe(filter_null, 'source')
-        p_out = - lower(p).rename(bus='sink')#.pipe(filter_null, 'sink')
+        p_in = upper(p).rename(bus='source')
+        p_out = - lower(p).rename(bus='sink')
     else:
         p_in = power_production(n, [snapshot]).loc[snapshot].rename(bus='source')
         p_out = power_demand(n, [snapshot]).loc[snapshot].rename(bus='sink')
 
-    K = Incidence(n, branch_components)
+    K = Incidence(n, branch_components, sparse=sparse)
     K_dir = K * sign(f_in)
 
-    J = inv(dot(lower(K_dir), diag(f_out), K.T) + np.diag(p_in), True)
-    Q = J.pipe(dedup_axis, ('sink', 'source')) * p_in
-    J = inv(dot(upper(K_dir), diag(f_in), K.T) + np.diag(p_out), True)
-    R = J.pipe(dedup_axis, ('source', 'sink')) * p_out
+    newdims, newdims_r = ('source', 'sink'), ('sink', 'source')
+    P_in = diag(p_in, newdims, sparse=sparse)
+    P_out = diag(p_out, newdims, sparse=sparse)
+    J = inv(dedup_axis(dot(lower(K_dir) * f_out, K.T), newdims) + P_in, True)
+    Q = J * p_in
+    J = inv(dedup_axis(dot(upper(K_dir) * f_in, K.T), newdims_r) + P_out, True)
+    R = J * p_out
 
     if downstream:
         A, kind = Q * p_out, 'downstream'
@@ -120,21 +126,25 @@ def average_participation(n, snapshot, dims='all',
 
     if aggregated and include_self_consumption:
         selfcon = self_consumption(n, snapshot)
-        A += diag(selfcon, ('source', 'sink')).reindex_like(A)
+        if sparse:
+            A += as_sparse(diag(selfcon, ('source', 'sink')))
+        else:
+            A += diag(selfcon, ('source', 'sink'))
+
 
     res = A.to_dataset(name='peer_to_peer').assign_attrs(method='Average Participation')
 
     if 'branch' in dims:
         f = f_in if downstream else f_out
-        T = dot(diag(f), upper(K_dir.T), Q.fillna(0)) * \
-            dot(lower(K_dir.T), -R.fillna(0))\
-            .assign_coords(snapshot=snapshot).assign_attrs(kind=kind)
+        T = dot(f * upper(K_dir.T), Q.fillna(0)) * dot(lower(K_dir.T), -R.fillna(0))
+        T = T.assign_coords(snapshot=snapshot).assign_attrs(kind=kind)
         res = res.assign({'peer_on_branch_to_peer': T})
     return res
 
 
 
-def marginal_participation(n, snapshot=None, q=0.5, branch_components=None):
+def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
+                           sparse=False):
     '''
     Allocate line flows according to linear sensitvities of nodal power
     injection given by the changes in the power transfer distribution
@@ -184,12 +194,11 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None):
     P = dot(K, F).pipe(dedup_axis, ('bus', 'injection_pattern'))
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Marginal Participation'})
-    return res
+    return as_sparse(res) if sparse else res
 
 
-def equivalent_bilateral_exchanges(n, snapshot=None, normalized=False,
-                                   vip=False, q=0.5,
-                                   branch_components=['Line', 'Link']):
+def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
+                                   q=0.5, sparse=False):
     """
     Sequentially calculate the load flow induced by individual
     power sources in the network ignoring other sources and scaling
@@ -231,7 +240,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, normalized=False,
     F = (H @ P).rename(injection_pattern='bus')
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Eqivalent Bilateral Exchanges'})
-    return res
+    return as_sparse(res) if sparse else res
 
 
 
@@ -452,7 +461,7 @@ func_dict = {'Average participation': average_participation,
              'zbus': zbus_transmission}
 
 def flow_allocation(n, snapshots=None, method='Average participation',
-                    sparse=True, parallelized=False, nprocs=None,
+                    parallelized=False, nprocs=None,
                     round_floats=8, **kwargs):
     """
     Function to allocate the total network flow to buses. Available
@@ -515,16 +524,10 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         return func_dict[method](n, snapshots, **kwargs)
 
     snapshots = n.snapshots if snapshots is None else snapshots
-
-
     pbar = ProgressBar()
 
-    if sparse:
-        def func(sn):
-            return as_sparse(func_dict[method](n, sn, **kwargs))
-    else:
-        def func(sn):
-            return func_dict[method](n, sn, **kwargs)
+    def func(sn):
+        return func_dict[method](n, sn, **kwargs)
 
     if parallelized:
         res = xr.concat(parmap(func, snapshots, nprocs=nprocs))

@@ -6,12 +6,14 @@ Created on Thu Mar  7 10:17:46 2019
 @author: fabian
 """
 
+from .utils import as_sparse
 import pandas as pd
 from xarray import DataArray
 import numpy as np
 import scipy as sp
 from functools import reduce
-
+from sparse import COO, as_coo
+from scipy.sparse.linalg import inv as sp_inv
 
 def upper(df):
     return df.clip(min=0)
@@ -24,6 +26,18 @@ def pinv(df):
     return DataArray(np.linalg.pinv(df), df.T.coords)
 
 def inv(df, pre_clean=False):
+    if isinstance(df.data, COO):
+        if pre_clean:
+            data = df.data
+            assert df.ndim <= 2, ('Maximally two dimension supported for '
+                                  'sparse inverse')
+            mask = np.isin(np.arange(data.shape[0]), data.coords[0]) & \
+                   np.isin(np.arange(data.shape[1]), data.coords[1])
+            subdf = df[mask][:, mask]
+            return DataArray(as_coo(sp_inv(subdf.data.tocsc())), subdf.T.coords)\
+                         .reindex(**{df.dims[0]: df.get_index(df.dims[0])}, fill_value=0)\
+                         .reindex(**{df.dims[1]: df.get_index(df.dims[1])}, fill_value=0)
+        return DataArray(as_coo(sp_inv(df.data.tocsc())), df.T.coords)
     if pre_clean:
         zeros_b = df == 0
         mask = tuple(df.get_index(d)[~zeros_b.all(d).data] for d in df.dims)
@@ -73,7 +87,7 @@ def null(df):
                      dims=(dim, 'null_vectors'))
 
 
-def diag(da, newdims=None):
+def diag(da, newdims=None, sparse=False):
     """
     Convenience function to select diagonal from a square matrix, or to build
     a diagonal matrix from a 1 dimensional array.
@@ -84,11 +98,13 @@ def diag(da, newdims=None):
     """
     if newdims is not None:
         oldindex = da.get_index(da.dims[0])
-        return DataArray(np.diag(da), {newdims[0]: oldindex.rename(newdims[0]),
+        res = DataArray(np.diag(da), {newdims[0]: oldindex.rename(newdims[0]),
                      newdims[1]: oldindex.rename(newdims[1])}, newdims)
-    if da.ndim == 1:
-        return DataArray(np.diag(da), dims=da.dims * 2, coords=da.coords)
-    return DataArray(np.diagflat(np.diag(da)), da.coords)
+    elif da.ndim == 1:
+        res = DataArray(np.diag(da), dims=da.dims * 2, coords=da.coords)
+    else:
+        res = DataArray(np.diagflat(np.diag(da)), da.coords)
+    return as_sparse(res) if sparse else res
 
 
 
