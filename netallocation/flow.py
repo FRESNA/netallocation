@@ -16,6 +16,7 @@ from collections import Iterable
 import os
 from numpy import sign, conj, real
 import logging
+from progressbar import ProgressBar
 logger = logging.getLogger(__name__)
 
 from .grid import (self_consumption, power_demand, power_production,
@@ -608,13 +609,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     if isinstance(snapshots, str):
         snapshots = [snapshots]
 
-    if parallelized and not to_hdf:
-        f = lambda sn: method_func(n, sn, **kwargs)
-    else:
-        def f(sn):
-            if sn.is_month_start & (sn.hour == 0):
-                logger.info('Allocating for %s %s'%(sn.month_name(), sn.year))
-            return method_func(n, sn, **kwargs)
+    f = lambda sn: method_func(n, sn, **kwargs)
 
 
     if to_hdf:
@@ -636,7 +631,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     elif parallelized:
         flow = pd.concat(parmap(f, snapshots, nprocs=nprocs))
     else:
-        flow = pd.concat((f(sn) for sn in snapshots), keys=snapshots.rename('snapshot'))
+        p = ProgressBar()
+        flow = pd.concat((f(sn) for sn in p(snapshots)), keys=snapshots.rename('snapshot'))
     if round_floats is not None:
         flow = flow[flow.round(round_floats)!=0]
     if as_xarray:
