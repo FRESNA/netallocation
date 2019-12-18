@@ -19,7 +19,7 @@ from pypsa.descriptors import Dict
 import pandas as pd
 import xarray as xr
 from xarray import Dataset, DataArray
-from xarray.ufuncs import real, imag, conj, sign
+from numpy import real, imag, conj, sign
 import logging
 from progressbar import ProgressBar
 
@@ -332,24 +332,21 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
     if snapshots is None:
         snapshots = n.snapshots.rename('snasphot')
     branches = n.branches().loc[branch_components]
+    f = network_flow(n, snapshots, branch_components)
 
     def regional_with_and_withtout_flow(region):
         in_region_buses = n.buses.query('country == @region').index
-        v = pd.concat([branches[lambda df: df.bus0.map(n.buses.country) == region].bus1,
-                       branches[lambda df: df.bus1.map(n.buses.country) == region].bus0])
-        vicinity_buses = pd.Index(v).difference(in_region_buses)
-        buses_i = in_region_buses.union(vicinity_buses).drop_duplicates()
-
-        region_branches = branches[lambda df:
-                            (df.bus0.map(n.buses.country) == region) |
-                            (df.bus1.map(n.buses.country) == region)] \
-                            .rename_axis(['component', 'branch_i'])
+        region_branches = branches.query('bus0 in @in_region_buses '
+                                         'or bus1 in @in_region_buses')
+        buses_i = (pd.Index(region_branches.bus0.unique()) |
+                   pd.Index(region_branches.bus1.unique()) |
+                   in_region_buses)
+        vicinity_buses = buses_i.difference(in_region_buses)
         branches_i = region_branches.index
 
-        K = Incidence(n, branch_components).loc[buses_i, branches_i]
+        K = Incidence(n, branch_components).loc[buses_i]
         #create regional injection pattern with nodal injection at the border
         #accounting for the cross border flow
-        f = network_flow(n, snapshots, branch_components).loc[branches_i]
         p = (K @ f)
         # p.loc[in_region_buses] ==
         #     network_injection(n, snapshots).loc[snapshots, in_region_buses].T
@@ -367,14 +364,18 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
 
         if 'Link' in branch_components:
             H = xr.concat((PTDF(n, branch_components, snapshot=sn)
-                           for sn in snapshots), dim='snapshot')
+                           for sn in snapshots), dim='snapshot')\
+                  .sel(branch=branches_i)
             # f == H @ p
         else:
-            H = PTDF(n, branch_components)
+            H = PTDF(n, branch_components).sel(bus=branches_i)
         f_wo = H.reindex(bus=buses_i).dot(p_wo, 'bus')
 
-        return Dataset({'flow_with': f, 'flow_without': f_wo})\
+        res = Dataset({'flow_with_transit': f.sel(branch=branches_i),
+                        'flow_without_transit': f_wo})\
                     .assign_coords(country=region)
+        return res.assign(transit_flow = res.flow_with_transit -
+                          res.flow_without_transit)
 
     progress = ProgressBar()
     flows = xr.concat((regional_with_and_withtout_flow(r) for r in progress(regions)),
@@ -384,8 +385,10 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
            if c in n.passive_branch_components else
            flows.sel(component=c) * DataArray(n.df(c).efficiency, dims='branch_i')
            for c in comps), dim=comps).stack(branch=['component', 'branch_i'])\
-           .rename_vars(flow_with='loss_with', flow_without='loss_without')
-    return flows.merge(loss).assign_attrs(method='With-and-Without-Transit')
+           .rename_vars(flow_with_transit = 'loss_with_transit',
+                        flow_without_transit = 'loss_without_transit',
+                        transit_flow = 'transit_flow_loss')
+    return flows.merge(loss).assign_attrs(method='With-and-Without-Transit').fillna(0)
 
 
 
@@ -508,7 +511,6 @@ def flow_allocation(n, snapshots=None, method='Average participation',
                 Sequentially calculate the load flow induced by
                 individual power sources in the network ignoring other
                 sources and scaling down sinks.
-            - 'Minimal flow shares'/'mfs'
             - 'Zbus transmission'/''zbus'
 
 
