@@ -42,8 +42,8 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     share = share.rename(bus='source', carrier='source_carrier')
     if sparse:
         share = as_sparse(share.fillna(0))
-    return (ds * share)#.stack({'production': ('source', 'source_carrier')})
-
+    return (ds * share).assign_attrs(ds.attrs)
+            #.stack({'production': ('source', 'source_carrier')})
 
 
 def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
@@ -77,4 +77,5 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     share = share.rename(bus='sink', carrier='sink_carrier')
     if sparse:
         share = as_sparse(share.fillna(0))
-    return (ds * share)#.stack({'demand': ('sink', 'sink_carrier')})
+    return (ds * share).assign_attrs(ds.attrs)
+            #.stack({'demand': ('sink', 'sink_carrier')})

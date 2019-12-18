@@ -94,7 +94,7 @@ def dense_to_h5(array, file, name):
     hf.close()
 
 
-def read_dense_h5(file, name, shape):
+def read_dense_h5(file, name):
     """
     Load the a dense data array stored via `dense_to_h5`.
 
@@ -120,13 +120,15 @@ def read_dense_h5(file, name, shape):
 
 coord_fn = 'coords.nc'
 sparse_fn = 'sparse_data.h5'
+dense_fn = 'dense_data.h5'
 
-def store_sparse_dataset(dataset, folder):
+def store_dataset(dataset, folder):
     """
-    Export xarray.Dataset with sparse Dataarrays.
+    Export xarray.Dataset with mixed sparse and dense Dataarrays.
 
-    Use this to write out xarray.Datsets with sparse arrays
-    and multiindex. Those will be stored as npz files in a new created
+    This is an extention to the normal exporter functions of xarray.
+    Use this to write out xarray.Datsets with sparse and/or dense arrays
+    and/or stacked multiindex. Those will be stored as h5 files in a new created
     directory.
 
 
@@ -145,29 +147,32 @@ def store_sparse_dataset(dataset, folder):
     ds = dataset.copy()
     p = Path(folder)
     p.mkdir(parents=True, exist_ok=True)
-    for d in [coord_fn, sparse_fn]:
+    for d in [coord_fn, sparse_fn, dense_fn]:
         if p.joinpath(d).exists():
             os.remove(p.joinpath(d))
-    sp_vars = [v for v in ds if isinstance(ds[v].data, sparse.COO)]
-    ds = ds.assign_attrs(**{'_dims_' + v: ds[v].dims for v in sp_vars})
-    ds = ds.assign_attrs(**{'_shape_' + v: ds[v].shape for v in sp_vars})
+    ds = ds.assign_attrs(**{'_dims_' + v: ds[v].dims for v in ds})
+    ds = ds.assign_attrs(**{'_shape_' + v: ds[v].shape for v in ds})
     progress = ProgressBar()
-    logging.info(f'Storing {len(sp_vars)} sparse datasets.')
-    if len(sp_vars):
-        for v in progress(sp_vars):
+    logging.info(f'Storing {len(ds)} variables.')
+    for v in progress(ds):
+        if isinstance(ds[v].data, sparse.COO):
             sparse_to_h5(ds[v].data, p.joinpath(sparse_fn), v)
-            ds = ds.drop(v)
+            ds = ds.assign_attrs(**{'_sparse_' + v: 1})
+        else:
+            dense_to_h5(ds[v].data, p.joinpath(dense_fn), v)
+            ds = ds.assign_attrs(**{'_sparse_' + v: 0})
+        ds = ds.drop(v)
     cp = p.joinpath(coord_fn)
     reset_multi = [k for k in multi_index_levels if k in ds.coords]
     ds.reset_index(reset_multi).to_netcdf(cp)
 
 
-def load_sparse_dataset(folder):
+def load_dataset(folder):
     """
     Import xarray.Dataset with sparse Dataarrays.
 
     Use this to load an xarray.Dataset stored via the function
-    `store_sparse_dataset`.
+    `store_dataset`.
 
     Parameters
     ----------
@@ -188,6 +193,9 @@ def load_sparse_dataset(folder):
     for v in vars:
         dims = ds.attrs.pop('_dims_' + v)
         shape = tuple(ds.attrs.pop('_shape_' + v))
-        data = read_sparse_h5(p.joinpath(sparse_fn), v, shape=shape)
+        if ds.attrs.pop('_sparse_' + v):
+            data = read_sparse_h5(p.joinpath(sparse_fn), v, shape=shape)
+        else:
+            data = read_dense_h5(p.joinpath(dense_fn), v)
         ds = ds.assign({v: (dims , data)})
     return ds
