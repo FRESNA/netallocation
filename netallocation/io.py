@@ -11,6 +11,7 @@ from pathlib import Path
 import xarray as xr
 from progressbar import ProgressBar
 import logging
+from h5py import File
 
 multi_index_levels = dict(branch = ['component', 'branch_i'],
                           production = ['source', 'source_carrier'],

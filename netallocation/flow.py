@@ -18,9 +18,8 @@ from .utils import parmap, upper, lower, as_sparse
 from pypsa.descriptors import Dict
 import pandas as pd
 import xarray as xr
-from xarray import Dataset
-import numpy as np
-from numpy import sign, conj, real
+from xarray import Dataset, DataArray
+from xarray.ufuncs import real, imag, conj, sign
 import logging
 from progressbar import ProgressBar
 
@@ -231,11 +230,10 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     p_minus = lower(p)
     p_pl = p_plus.loc[:, snapshot] # same as one-dimensional
     p_min = p_minus.loc[:, snapshot]
-    A = dot(p_minus, p_plus.T) / float(p_pl.sum())
-    B = dot(p_plus, p_minus.T) / float(p_pl.sum())
     new_dims = ('bus', 'injection_pattern')
-    P = (q * (dedup_axis(A, new_dims) + diag(p_pl, new_dims))
-         + (q - 1) * (dedup_axis(B, new_dims) - diag(p_min, new_dims)) )
+    A = dedup_axis(dot(p_minus, p_plus.T) / float(p_pl.sum()), new_dims)
+    B = dedup_axis(dot(p_plus, p_minus.T) / float(p_pl.sum()), new_dims)
+    P = q * (A + diag(p_pl, new_dims)) + (q - 1) * (B - diag(p_min, new_dims))
     P = P.assign_coords(snapshot = snapshot)
     F = (H @ P).rename(injection_pattern='bus')
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
@@ -245,7 +243,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
 
 
 def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
-                      branch_components=['Line', 'Transformer']):
+                      branch_components=None):
     '''
     This allocation builds up on the method presented in [1]. However, we
     provide for non-linear power flow an additional DC-approximated
@@ -259,124 +257,104 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
     '''
     n.calculate_dependent_values()
     snapshot = n.snapshots[0] if snapshot is None else snapshot
-    b_comps = branch_components
+    if branch_components is None:
+        branch_components = n.passive_branch_components
+    assert 'Link' not in branch_components, ('Component "Link" cannot be '
+                'considered in Zbus flow allocation.')
 
-
-    K = Incidence(n, branch_components=b_comps)
-    Y = Ybus(n, b_comps, linear=linear)  # Ybus matrix
+    K = Incidence(n, branch_components=branch_components)
+    Y = Ybus(n, branch_components, linear=linear)  # Ybus matrix
 
     v = voltage(n, snapshot, linear=linear)
 
-    H = PTDF(n, b_comps) if linear else CISF(n, b_comps)
+    H = PTDF(n, branch_components) if linear else CISF(n, branch_components)
 
-    i = Y @ v
-    f = network_flow(n, snapshot, b_comps)
+    i = dot(Y, v)
+    f = network_flow(n, snapshot, branch_components)
     if downstream is None:
-        v_ = K.abs().T @ v / 2
+        v_ = abs(K) @ v / 2
     elif downstream:
-        v_ = upper(K @ diag(sign(f))).T @ v
+        v_ = upper(K * sign(f)) @ v
     else:
-        v_ = -lower(K @ diag(sign(f))).T @ v
+        v_ = -lower(K * sign(f)) @ v
 
     if linear:
-#        i >> network_injection(n, snapshot, branch_components=b_comps)
-        fun = lambda v_, i : H @ diag(i) # which is the same as mp with q=0.5
+        # i == network_injection(n, snapshot, branch_components=branch_components)
+        vif = H * i # which is the same as mp with q=0.5
     else:
-        (np.conj(i) * v).apply(np.real) >> n.buses_t.p.loc[snapshot].T
-        fun = lambda v_, i : ( diag(v_) @ conj(H) @ diag(conj(i)) ).applymap(real)
-
-
-    if isinstance(snapshot, pd.Timestamp):
-        v_ = v_.to_frame(snapshot)
-        i = i.to_frame(snapshot)
-        snapshot = [snapshot]
-
-    q = pd.concat((fun(v_[sn], i[sn]) for sn in snapshot), keys=snapshot,
-                  names=['snapshot', 'component', 'branch_i'])\
-            .rename_axis(columns='bus')
-
-    return q.stack()\
-            .reorder_levels(['snapshot', 'bus', 'component', 'branch_i'])
+        # real(conj(i) * v) == n.buses_t.p.loc[snapshot].T
+        vif = real( v_ * conj(H) * conj(i))
+    vip = K.dot(vif, 'branch')
+    return Dataset({'virtual_flow_pattern': vif,
+                    'virtual_injection_pattern': vip},
+                  attrs={'method': 'Zbus flow allocation'})
 
 
 
-def with_and_without_transit(n, snapshots=None,
-                             branch_components=['Line', 'Link']):
-    regions = n.buses.country.unique()
+def with_and_without_transit(n, snapshots=None, branch_components=None):
 
-    if not n.links.empty:
-        Y = pd.concat([admittance(n, branch_components, sn)
-                       for sn in snapshots], axis=1,
-                       keys=snapshots)
-        def dynamic_subnetwork_PTDF(K, branches_i, snapshot):
-            y = Y.loc[branches_i, snapshot].abs()
-            return diag(y) @ K.T @ pinv(K @ diag(y) @ K.T)
-
+    regions = pd.Index(n.buses.country.unique(), name='country')
+    if branch_components is None:
+        branch_components = n.passive_branch_components
+    branch_components = list(branch_components)
+    if snapshots is None:
+        snapshots = n.snapshots.rename('snasphot')
+    branches = n.branches().loc[branch_components]
 
     def regional_with_and_withtout_flow(region):
         in_region_buses = n.buses.query('country == @region').index
-        vicinity_buses = pd.Index(
-                            pd.concat(
-                            [n.branches()[lambda df:
-                                df.bus0.map(n.buses.country) == region].bus1,
-                             n.branches()[lambda df:
-                                 df.bus1.map(n.buses.country) == region].bus0]))\
-                            .difference(in_region_buses)
+        v = pd.concat([branches[lambda df: df.bus0.map(n.buses.country) == region].bus1,
+                       branches[lambda df: df.bus1.map(n.buses.country) == region].bus0])
+        vicinity_buses = pd.Index(v).difference(in_region_buses)
         buses_i = in_region_buses.union(vicinity_buses).drop_duplicates()
 
-
-        region_branches = n.branches()[lambda df:
+        region_branches = branches[lambda df:
                             (df.bus0.map(n.buses.country) == region) |
                             (df.bus1.map(n.buses.country) == region)] \
                             .rename_axis(['component', 'branch_i'])
         branches_i = region_branches.index
 
         K = Incidence(n, branch_components).loc[buses_i, branches_i]
-
         #create regional injection pattern with nodal injection at the border
         #accounting for the cross border flow
-        f = pd.concat([n.pnl(c).p0.loc[snapshots].T for c in branch_components],
-                      keys=branch_components, sort=True).reindex(branches_i)
-
+        f = network_flow(n, snapshots, branch_components).loc[branches_i]
         p = (K @ f)
-        p.loc[in_region_buses] >> \
-            network_injection(n, snapshots).loc[snapshots, in_region_buses].T
+        # p.loc[in_region_buses] ==
+        #     network_injection(n, snapshots).loc[snapshots, in_region_buses].T
 
         #modified injection pattern without transition
-        im = p.loc[vicinity_buses][lambda ds: ds > 0]
-        ex = p.loc[vicinity_buses][lambda ds: ds < 0]
+        im = upper(p.loc[vicinity_buses])
+        ex = lower(p.loc[vicinity_buses])
 
-        largerImport_b = im.sum() > - ex.sum()
-        scaleImport = (im.sum() + ex.sum()) / im.sum()
-        scaleExport = (im.sum() + ex.sum()) / ex.sum()
-        netImOrEx = (im * scaleImport).T\
-                    .where(largerImport_b, (ex * scaleExport).T)
-        p_wo = pd.concat([p.loc[in_region_buses], netImOrEx.T])\
-                 .reindex(buses_i).fillna(0)
+        largerImport_b = im.sum('bus') > - ex.sum('bus')
+        scaleImport = (im.sum('bus') + ex.sum('bus')) / im.sum('bus')
+        scaleExport = (im.sum('bus') + ex.sum('bus')) / ex.sum('bus')
+        netImOrEx = (im * scaleImport).where(largerImport_b, (ex * scaleExport))
+        p_wo = xr.concat([p.loc[in_region_buses], netImOrEx], dim='bus')\
+                 .reindex(bus=buses_i).fillna(0)
 
-        if 'Link' not in f.index.unique('component'):
-            y = admittance(n, ['Line'])[branches_i]
-            H = diag(y) @ K.T @ pinv(K @ diag(y) @ K.T)
-            f_wo = H @ p_wo
-    #        f >> H @ p
+        if 'Link' in branch_components:
+            H = xr.concat((PTDF(n, branch_components, snapshot=sn)
+                           for sn in snapshots), dim='snapshot')
+            # f == H @ p
         else:
-            f_wo = pd.concat(
-                    (dynamic_subnetwork_PTDF(K, branches_i, sn) @ p_wo[sn]
-                        for sn in snapshots), axis=1, keys=snapshots)
+            H = PTDF(n, branch_components)
+        f_wo = H.reindex(bus=buses_i).dot(p_wo, 'bus')
 
+        return Dataset({'flow_with': f, 'flow_without': f_wo})\
+                    .assign_coords(country=region)
 
-        f, f_wo = f.T, f_wo.T
-        return pd.concat([f, f_wo], axis=1, keys=['with', 'without'])
-#        return {'flow': flow, 'loss': loss}
-    flows = pd.concat((regional_with_and_withtout_flow(r) for r in regions),
-                      axis=1, keys=regions,
-                      names=['country', 'method', 'component', 'branch_i'])\
-                .reorder_levels(['country', 'component', 'branch_i', 'method'],
-                                axis=1).sort_index(axis=1)
+    progress = ProgressBar()
+    flows = xr.concat((regional_with_and_withtout_flow(r) for r in progress(regions)),
+                      dim='country')
+    comps = flows.get_index('branch').unique('component')
+    loss = xr.concat((flows.sel(component=c)**2 * DataArray(n.df(c).r_pu, dims='branch_i')
+           if c in n.passive_branch_components else
+           flows.sel(component=c) * DataArray(n.df(c).efficiency, dims='branch_i')
+           for c in comps), dim=comps).stack(branch=['component', 'branch_i'])\
+           .rename_vars(flow_with='loss_with', flow_without='loss_without')
+    return flows.merge(loss)
 
-    r_pu = n.branches().r_pu.fillna(0).rename_axis(['component', 'branch_i'])
-    loss = (flows **2 * r_pu).sum(level=['country', 'method'], axis=1)
-    return Dict({'flow': flows, 'loss': loss})
 
 
 def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',

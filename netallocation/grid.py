@@ -107,7 +107,8 @@ def impedance(n, branch_components=None, snapshot=None,
 
     f = network_flow(n, snapshot)
     branches_i = f.get_index('branch')
-    C = Cycles(n, branches_i[abs(f).values > 1e-8]).reindex(branch=branches_i, fill_value=0)
+    C = Cycles(n, branches_i[abs(f).values > 1e-8])\
+            .reindex(branch=branches_i, fill_value=0)
     # C_mix is all the active cycles where at least one link is included
     C_mix = C[:, ((C != 0) & (f != 0)).groupby('component').any().loc['Link'].values]
 
@@ -124,7 +125,7 @@ def impedance(n, branch_components=None, snapshot=None,
     omega[(omega == 0) & (f.loc['Link'] != 0)] = 1
     Z = z.reindex_like(f).copy()
     Z.loc['Link'] = omega.reindex_like(f.loc['Link'], fill_value=0)
-    return Z
+    return Z.assign_coords(snapshot=snapshot)
 
 def admittance(n, branch_components=None, snapshot=None,
                pu_system=True, linear=True):
@@ -160,8 +161,10 @@ def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
     if 'Link' in branch_components or update or '_ptdf' not in n.__dir__():
         n.calculate_dependent_values()
         K = Incidence(n, branch_components)
-        Y = diag(admittance(n, branch_components, snapshot, pu_system=pu_system))
-        n._ptdf = dot(Y, K.T, pinv(dot(K, Y, K.T)))
+        y = admittance(n, branch_components, snapshot, pu_system=pu_system)
+        n._ptdf = dot(y * K.T, pinv(dot(K * y, K.T)))
+        if snapshot is not None:
+            n._ptdf = n._ptdf.assign_coords(snapshot=snapshot)
     return n._ptdf
 
 
@@ -182,10 +185,11 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     given branch_components. If branch_component or snapshots is None, which is
     the default, they are set to n.branch_components and n.snapshots
     respectively. If 'Link' is included in branch_components, then their
-    weightings derived from their current pseudo-impedance dependent on the
+    weightings are derived from their current pseudo-impedance dependent on the
     current flow (see :func:`impedance`).
     """
-    if branch_components is None: branch_components = n.passive_branch_components
+    if branch_components is None:
+        branch_components = n.passive_branch_components
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, snapshot, pu_system=pu_system,
                    linear=linear)
@@ -229,12 +233,17 @@ def voltage(n, snapshots=None, linear=True, pu_system=True):
         v = n.buses_t.v_ang.loc[snapshots] + 1
 #        v = np.exp(- 1.j * n.buses_t.v_ang).T[snapshots]
     else:
-        v = (n.buses_t.v_mag_pu * np.exp(- 1.j * n.buses_t.v_ang)).T[snapshots]
+        v = (n.buses_t.v_mag_pu * np.exp(- 1.j * n.buses_t.v_ang)).loc[snapshots]
 
     if not pu_system:
         v *= n.buses.v_nom
 
-    return v
+    if isinstance(snapshots, (list, pd.Index)):
+        return DataArray(v.T.reindex(n.buses.index), dims=['bus', 'snapshot'])
+    else:
+        return DataArray(v.reindex(n.buses.index), dims='bus')\
+                .assign_coords(snapshot=snapshots)
+
 
 
 
@@ -256,7 +265,7 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
              keys=comps, axis=axis).rename_axis(['component', 'branch_i'], axis=axis)
 
     if axis:
-        f = DataArray(f, dims=['snapshot', 'branch'])
+        f = DataArray(f.T, dims=['branch', 'snapshot'])
     else:
         f = DataArray(f, dims='branch').assign_coords(snapshot=snapshots)
     if linear:
