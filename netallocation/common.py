@@ -24,4 +24,6 @@ class AllocationAccessor:
 
     from .io import store_dataset as to_dir
     from .breakdown import expand_by_sink_type, expand_by_source_type
+    from .utils import as_dense, as_sparse, filter_null, lower, upper
+    from .plot import chord_diagram as plot_chord_diagram
 
