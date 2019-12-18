@@ -6,6 +6,7 @@ Created on Mon Dec 16 12:58:09 2019
 @author: fabian
 """
 
+from .utils import obj_if_acc
 import sparse, os
 from pathlib import Path
 import xarray as xr
@@ -144,6 +145,7 @@ def store_dataset(dataset, folder):
     None.
 
     """
+    dataset = obj_if_acc(dataset)
     ds = dataset.copy()
     p = Path(folder)
     p.mkdir(parents=True, exist_ok=True)

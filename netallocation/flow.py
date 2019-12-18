@@ -11,15 +11,14 @@ Created on Wed Feb 21 12:14:49 2018
 from .linalg import dot
 from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
-                        PTDF, CISF, admittance, voltage, Ybus)
-from .linalg import diag, inv, pinv, dedup_axis
-from .utils import parmap, upper, lower, as_sparse
+                        PTDF, CISF, voltage, Ybus)
+from .linalg import diag, inv, dedup_axis
+from .utils import upper, lower, as_sparse
 
-from pypsa.descriptors import Dict
 import pandas as pd
 import xarray as xr
 from xarray import Dataset, DataArray
-from numpy import real, imag, conj, sign
+from numpy import real, conj, sign
 import logging
 from progressbar import ProgressBar
 
@@ -29,6 +28,8 @@ def average_participation(n, snapshot, dims='all',
                     branch_components=None, aggregated=True, downstream=True,
                     include_self_consumption=True, sparse=False):
     """
+    Perform a Flow Tracing allocation.
+
     Allocate the network flow in according to the method 'Average
     participation' or 'Flow tracing' firstly presented in [1,2].
     The algorithm itself is derived from [3]. The general idea is to
@@ -37,7 +38,7 @@ def average_participation(n, snapshot, dims='all',
     partial flows on each line, or to each bus where the power goes
     to (or comes from).
 
-    This method provdes two general options:
+    This method provides two general options:
         Downstream:
             The flow of each nodal power injection is traced through
             the network and decomposed the to set of lines/buses
@@ -46,6 +47,10 @@ def average_participation(n, snapshot, dims='all',
             The flow of each nodal power demand is traced
             (in reverse direction) through the network and decomposed
             to the set of lines/buses where it comes from.
+
+    Note that only one snapshot can be calculated at a time, use
+    `flow_allocation` to calculate multiple snapshots.
+
 
     [1] J. Bialek, “Tracing the flow of electricity,”
         IEE Proceedings - Generation, Transmission and Distribution,
@@ -63,8 +68,8 @@ def average_participation(n, snapshot, dims='all',
 
     Parameters
     ----------
-    network : pypsa.Network() object with calculated flow data
-
+    n : pypsa.Network
+        Network object with valid flow data.
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
@@ -93,6 +98,7 @@ def average_participation(n, snapshot, dims='all',
     sparse: boolean, default False
         Whether to compute the allocation with sparse arrays, this can save
         time for large networks
+
     """
     dims = ['source', 'branch', 'sink'] if dims == 'all' else dims
 
@@ -147,13 +153,17 @@ def average_participation(n, snapshot, dims='all',
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
                            sparse=False):
-    '''
+    """
+    Perform a Marginal Participation allocation.
+
     Allocate line flows according to linear sensitvities of nodal power
     injection given by the changes in the power transfer distribution
     factors (PTDF)[1-3]. As the method is based on the DC-approximation,
     it works on subnetworks only as link flows are not taken into account.
-    Note that this method does not exclude counter flows. It return either a
-    Virtual Injection Pattern
+    This method does not exclude counter flows.
+    Note that only one snapshot can be calculated at a time, use
+    `flow_allocation` to calculate multiple snapshots.
+
 
     [1] F. J. Rubio-Oderiz, I. J. Perez-Arriaga, Marginal pricing of
         transmission services: a comparative analysis of network cost
@@ -170,8 +180,8 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 
     Parameters
     ----------
-    network : pypsa.Network
-        Netowrk object with calculated flow data.
+    n : pypsa.Network
+        Network object with valid flow data.
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
@@ -184,7 +194,7 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
         account. If q is one, only net generators are taken
         into account.
 
-    '''
+    """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
     H = PTDF(n, branch_components=branch_components, snapshot=snapshot)
     K = Incidence(n, branch_components=branch_components)
@@ -205,18 +215,22 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
                                    q=0.5, sparse=False):
     """
-    Sequentially calculate the load flow induced by individual
+    Perform a Equivalent Bilateral Exchanges allocation.
+
+    Calculate the load flow induced by individual
     power sources in the network ignoring other sources and scaling
     down sinks. The sum of the resulting flow of those virtual
     injection patters is the total network flow. This method matches
     the 'Marginal participation' method for q = 1. Return either Virtual
     Injection Patterns if vip is set to True, or Virtual Flow Patterns.
-
+    Note that only one snapshot can be calculated at a time, use
+    `flow_allocation` to calculate multiple snapshots.
 
     Parameters
     ----------
-    network : pypsa.Network object with calculated flow data
-    snapshot : str
+    n : pypsa.Network
+        Network object with valid flow data.
+    snapshot : str, pd.Timestamp
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
     branch_components : list
@@ -247,7 +261,9 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
 
 def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
                       branch_components=None):
-    '''
+    r"""
+    Perform a Zbus Transmission allocation.
+
     This allocation builds up on the method presented in [1]. However, we
     provide for non-linear power flow an additional DC-approximated
     modification, neglecting the series resistance r for lines.
@@ -257,7 +273,18 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
         “$Z_{\rm bus}$ Transmission Network Cost Allocation,” IEEE Transactions
         on Power Systems, vol. 22, no. 1, pp. 342–349, Feb. 2007.
 
-    '''
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network object with valid flow data.
+    snapshot : str, pd.Timestamp, list, pd.Index
+        Specify snapshot(s) for which the allocation should be performed.
+        Must be a suset of n.snapshots.
+    branch_components : list
+        Components for which the allocation should be calculated.
+        The default is None, which results in n.branch_components.
+
+    """
     n.calculate_dependent_values()
     snapshot = n.snapshots[0] if snapshot is None else snapshot
     if branch_components is None:
@@ -309,7 +336,7 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
     Parameters
     ----------
     n : pypsa.Network
-        Network with calculated flows.
+        Network object with valid flow data.
     snapshots : pd.Index or list
         Snapshots for which the flows and losses are calculated. Thye must be
         a subset of n.snapshots. The default is None, which results
@@ -477,8 +504,9 @@ def flow_allocation(n, snapshots=None, method='Average participation',
                     parallelized=False, nprocs=None,
                     round_floats=8, **kwargs):
     """
-    Function to allocate the total network flow to buses. Available
-    methods are 'Average participation' ('ap'), 'Marginal
+    Allocate or decompose the network flow with different methods.
+
+    Available methods are 'Average participation' ('ap'), 'Marginal
     participation' ('mp'), 'Virtual injection pattern' ('vip'),
     'Zbus transmission' ('zbus').
 
@@ -486,15 +514,12 @@ def flow_allocation(n, snapshots=None, method='Average participation',
 
     Parameters
     ----------
-
-    network : pypsa.Network object
-
+    n : pypsa.Network
+        Network object with valid flow data.
     snapshots : string or pandas.DatetimeIndex
                 (subset of) snapshots of the network
-
     per_bus : Boolean, default is False
               Whether to allocate the flow in an peer-to-peeer manner,
-
     method : string
         Type of the allocation method. Should be one of
 
@@ -511,8 +536,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
                 Sequentially calculate the load flow induced by
                 individual power sources in the network ignoring other
                 sources and scaling down sinks.
-            - 'Zbus transmission'/''zbus'
-
+            - 'Zbus transmission'/'zbus'
 
     Returns
     -------

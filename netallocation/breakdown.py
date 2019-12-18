@@ -6,23 +6,24 @@ Created on Thu Mar  7 15:38:24 2019
 @author: fabian
 """
 
-from .grid import self_consumption, power_demand, power_production, network_flow
-from .utils import as_sparse
-import pandas as pd
+from .grid import power_demand, power_production
+from .utils import as_sparse, obj_if_acc
+import logging
 
+logger = logging.getLogger(__name__)
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
                           dim='source', cut_lower_share=1e-5, sparse=True):
     """
-    Breakdown allocation into generation carrier type. These include carriers
-    of all components specified by 'components'. Note that carrier names of all
-    components have to be unique.
+    Breakdown allocation into generation carrier type.
 
-    Pararmeter
+    These include carriers of all components specified by 'components'.
+    Note that carrier names of all components have to be unique.
+
+    Parameter
     ----------
-
-    ds : pd.Series
-        Allocation Series with at least index level 'source'
+    ds : xarray.Dataset
+        Allocation Data with dimension 'source'
     n : pypsa.Network()
         Network which the allocation was derived from
     components : list, default ['Generator', 'StorageUnit']
@@ -32,16 +33,17 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
 
     Example
     -------
-
-    ap = flow_allocation(n, n.snapshots, per_bus=True)
-    ap_carrier = pypsa.allocation.expand_by_carrier(ap, n)
+    >>> ap = ntl.flow_allocation(n, n.snapshots, method='ap')
+    >>> ntl.breakdown.expand_by_source_carrier(ap, n)
 
     """
+    ds = obj_if_acc(ds)
     sns = ds.get_index('snapshot')
     share = (power_production(n, sns, per_carrier=True) / power_production(n, sns))
     share = share.rename(bus='source', carrier='source_carrier')
     if sparse:
         share = as_sparse(share.fillna(0))
+    logger.info('Expanding by source carrier')
     return (ds * share).assign_attrs(ds.attrs)
             #.stack({'production': ('source', 'source_carrier')})
 
@@ -50,32 +52,32 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
                         cut_lower_share=1e-5, sparse=True):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
+
     These include carriers of all components specified by 'components'. Note
     that carrier names of all components have to be unique.
 
-    Pararmeter
+    Parameter
     ----------
-
-    ds : pd.Series
-        Allocation Series with at least index level 'sink'
+    ds : xarray.Dataset
+        Allocation Data with dimension 'sink'
     n : pypsa.Network()
         Network which the allocation was derived from
     components : list, default ['Load', 'StorageUnit']
         List of considered components. Carrier types of these components are
         taken for breakdown.
 
-
     Example
     -------
-
-    ap = flow_allocation(n, n.snapshots, per_bus=True)
-    ap_carrier = pypsa.allocation.expand_by_carrier(ap, n)
+    >>> ap = ntl.flow_allocation(n, n.snapshots, method='ap')
+    >>> ntl.breakdown.expand_by_sink_carrier(ap, n)
 
     """
+    ds = obj_if_acc(ds)
     sns = ds.get_index('snapshot')
     share = (power_demand(n, sns, per_carrier=True) / power_demand(n, sns))
     share = share.rename(bus='sink', carrier='sink_carrier')
     if sparse:
         share = as_sparse(share.fillna(0))
+    logger.info('Expanding by sink carrier')
     return (ds * share).assign_attrs(ds.attrs)
             #.stack({'demand': ('sink', 'sink_carrier')})
