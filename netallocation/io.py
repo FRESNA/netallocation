@@ -12,10 +12,62 @@ import xarray as xr
 from progressbar import ProgressBar
 import logging
 from h5py import File
+import numpy as np
 
 multi_index_levels = dict(branch = ['component', 'branch_i'],
                           production = ['source', 'source_carrier'],
                           demand = ['sink', 'sink_carrier'])
+
+
+def sparse_array_to_h5(coo, file, name):
+    """
+    Store sparse data in hdf5 format.
+
+    Fast way to store sparse.COO arrays.
+
+    Parameters
+    ----------
+    coo : spare.COO
+        Data array which will be stored.
+    file : str
+        Name of the h5 file in which the data should be stored.
+    name : str
+        Variable name of the data under which is will be stored in the h5 file.
+
+    Returns
+    -------
+    None.
+
+    """
+    hf = File(file, 'w')
+    hf.create_dataset(name, data=np.vstack([coo.coords, coo.data]))
+    hf.close()
+
+
+def sparse_array_read_h5(file, name):
+    """
+    Load the a sparse data array stored via `sparse_array_to_h5`.
+
+    Parameters
+    ----------
+    file : str
+        Name of the h5 file from where the data should be loaded.
+    name : str
+        Name of the variable stored in the h5 file.
+
+    Returns
+    -------
+    sparse.COO
+        Loaded sparse array.
+
+    """
+    hf = File(file, 'r')
+    raw = np.array(hf.get(name))
+    coords = raw[:-1]
+    data = raw[-1]
+    return sparse.COO(coords, data, shape=tuple(coords[:, -1].astype(int)))
+
+
 
 def store_sparse_dataset(dataset, folder):
     """
@@ -46,9 +98,9 @@ def store_sparse_dataset(dataset, folder):
     progress = ProgressBar()
     logging.info(f'Storing {len(spdas)} sparse datasets.')
     for da in progress(spdas):
-        sparse.save_npz(p.joinpath(da), ds[da].data)
+        sparse_array_to_h5(p.joinpath(da), ds[da].data)
         ds = ds.drop(da)
-    cp = p.joinpath('Coords.nc')
+    cp = p.joinpath('coords.nc')
     reset_multi = [k for k in multi_index_levels if k in ds.coords]
     ds.drop(list(ds)).reset_index(reset_multi).to_netcdf(cp)
 
@@ -72,7 +124,7 @@ def load_sparse_dataset(folder):
 
     """
     p = Path(folder)
-    ds = xr.load_dataset(p.joinpath('Coords.nc'))
+    ds = xr.load_dataset(p.joinpath('coords.nc'))
     set_index = {k: v for k,v in multi_index_levels.items() if k in ds.dims}
     ds = ds.set_index(set_index)
     name = lambda path: str(path).split(os.path.sep)[-1][:-4]

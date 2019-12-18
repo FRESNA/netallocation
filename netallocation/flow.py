@@ -68,6 +68,9 @@ def average_participation(n, snapshot, dims='all',
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
+    branch_components : list
+        Components for which the allocation should be calculated.
+        The default is None, which results in n.branch_components.
     dims : list or string
         list of dimensions to be included, if set to "all", the full dimensions
         are calculated ['source', 'branch', 'sink']
@@ -167,11 +170,14 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 
     Parameters
     ----------
-    network : pypsa.Network() object with calculated flow data
-
+    network : pypsa.Network
+        Netowrk object with calculated flow data.
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
+    branch_components : list
+        Components for which the allocation should be calculated.
+        The default is None, which results in n.branch_components.
     q : float, default 0.5
         split between net producers and net consumers.
         If q is zero, only the impact of net load is taken into
@@ -213,12 +219,9 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     snapshot : str
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
-    vip : Boolean, default True
-        Whether to return allocation on buses. Allocate to lines
-        if False.
-    normalized : Boolean, default False
-        Return the share of te allocated flow per line, only effective when
-        vip is False.
+    branch_components : list
+        Components for which the allocation should be calculated.
+        The default is None, which results in n.branch_components.
 
     """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
@@ -292,7 +295,36 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
 
 
 def with_and_without_transit(n, snapshots=None, branch_components=None):
+    """
+    Compute the with-and-without flows and losses.
 
+    This function only works with the linear power so far and calculated the
+    loss which *would* take place accoring to
+
+    f²⋅r
+
+    which is the loss for directed currents. If links are included their
+    efficiency determines the loss.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network with calculated flows.
+    snapshots : pd.Index or list
+        Snapshots for which the flows and losses are calculated. Thye must be
+        a subset of n.snapshots. The default is None, which results
+        in n.snapshots.
+    branch_components : list
+        Components for which the allocation should be calculated.
+        The default is None, which results in n.passive_branch_components.
+
+    Returns
+    -------
+    xarray.Dataset
+        Resulting loss allocation of dimension {branch, country, snapshot} with
+        variables [flow_with, loss_with, flow_without, loss_without].
+
+    """
     regions = pd.Index(n.buses.country.unique(), name='country')
     if branch_components is None:
         branch_components = n.passive_branch_components
@@ -353,7 +385,7 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
            flows.sel(component=c) * DataArray(n.df(c).efficiency, dims='branch_i')
            for c in comps), dim=comps).stack(branch=['component', 'branch_i'])\
            .rename_vars(flow_with='loss_with', flow_without='loss_without')
-    return flows.merge(loss)
+    return flows.merge(loss).assign_attrs(method='With-and-Without-Transit')
 
 
 
