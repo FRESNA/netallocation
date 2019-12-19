@@ -46,14 +46,16 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
         share = as_sparse(share.fillna(0))
     logger.info('Expanding by source carrier')
     if chunk is None:
-        return (ds * share).assign_attrs(ds.attrs)
+        res = ds * share
     else:
-        return (ds.chunk(chunk) * share.chunk(chunk)).compute().assign_attrs(ds.attrs)
+        res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
+    return res.assign_attrs(ds.attrs)
             #.stack({'production': ('source', 'source_carrier')})
 
 
 def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
-                        cut_lower_share=1e-5, sparse=True):
+                        cut_lower_share=1e-5, sparse=True,
+                        chunk=None):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
 
@@ -83,5 +85,8 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     if sparse:
         share = as_sparse(share.fillna(0))
     logger.info('Expanding by sink carrier')
-    return (ds * share).assign_attrs(ds.attrs)
-            #.stack({'demand': ('sink', 'sink_carrier')})
+    if chunk is None:
+        res = ds * share
+    else:
+        res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
+    return res.assign_attrs(ds.attrs)
