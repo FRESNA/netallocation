@@ -9,6 +9,7 @@ Created on Thu Mar  7 15:38:24 2019
 from .grid import power_demand, power_production
 from .utils import as_sparse, obj_if_acc
 import logging
+from dask.diagnostics import ProgressBar
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,8 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     if chunk is None:
         res = ds * share
     else:
-        res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
+        with ProgressBar():
+            res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
     return res.assign_attrs(ds.attrs)
             #.stack({'production': ('source', 'source_carrier')})
 
@@ -88,5 +90,6 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     if chunk is None:
         res = ds * share
     else:
-        res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
+        with ProgressBar():
+            res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
     return res.assign_attrs(ds.attrs)
