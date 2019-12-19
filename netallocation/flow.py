@@ -491,7 +491,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
             .rename_axis('removed line')
             .rename('Network'))
 
-func_dict = {'Average participation': average_participation,
+_func_dict = {'Average participation': average_participation,
              'ap': average_participation,
              'Marginal participation': marginal_participation,
              'mp': marginal_participation,
@@ -499,6 +499,8 @@ func_dict = {'Average participation': average_participation,
              'ebe': equivalent_bilateral_exchanges,
              'Zbus transmission': zbus_transmission,
              'zbus': zbus_transmission}
+_non_sequential_funcs = [zbus_transmission, with_and_without_transit]
+
 
 def flow_allocation(n, snapshots=None, method='Average participation',
                     parallelized=False, nprocs=None,
@@ -547,29 +549,25 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         second object, 'cost', returns the corresponding cost derived
         from the flow allocation.
     """
-    if all(c.pnl.p0.empty for c in n.iterate_components(n.branch_components)):
-        raise ValueError('Flows are not given by the network, please solve the '
-                         'network flows first')
     n.calculate_dependent_values()
+    if all(c.pnl.p0.empty for c in n.iterate_components(n.branch_components)):
+        raise ValueError('Flows are not given by the network, '
+                         'please solve the network flows first')
 
-    if method not in func_dict.keys():
+    if method not in _func_dict.keys():
         raise(ValueError('Method not implemented, please choose one out of'
-                         f'{list(func_dict.keys())}'))
+                         f'{list(_func_dict.keys())}'))
 
-    if isinstance(snapshots, (str, pd.Timestamp)):
-        return func_dict[method](n, snapshots, **kwargs)
+    is_nonsequetial_func = _func_dict[method] in _non_sequential_funcs
+    if isinstance(snapshots, (str, pd.Timestamp)) or is_nonsequetial_func:
+        return _func_dict[method](n, snapshots, **kwargs)
 
     snapshots = n.snapshots if snapshots is None else snapshots
     pbar = ProgressBar()
 
-    def func(sn):
-        return func_dict[method](n, sn, **kwargs)
-
-    if parallelized:
-        res = xr.concat(parmap(func, snapshots, nprocs=nprocs))
-    else:
-        res = xr.concat((func(sn) for sn in pbar(snapshots)),
-                        dim=snapshots.rename('snapshot'))
+    func = lambda sn: _func_dict[method](n, sn, **kwargs)
+    res = xr.concat((func(sn) for sn in pbar(snapshots)),
+                    dim=snapshots.rename('snapshot'))
     return res
 
 

@@ -8,6 +8,7 @@ Created on Thu Mar  7 15:10:07 2019
 
 import pandas as pd
 import xarray as xr
+from pypsa.geo import haversine_pts
 from sparse import as_coo
 
 def upper(df):
@@ -68,5 +69,10 @@ def obj_if_acc(obj):
         return obj._obj
     else:
         return obj
+
+def bus_distances(n):
+    xy = n.buses[['x', 'y']]
+    d = xy.apply(lambda ds: pd.Series(haversine_pts(ds, xy), xy.index), axis=1)
+    return xr.DataArray(d, dims=['source', 'sink'])
 
 
