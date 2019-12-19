@@ -13,7 +13,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
-                          dim='source', cut_lower_share=1e-5, sparse=True):
+                          dim='source', cut_lower_share=1e-5, sparse=True,
+                          chunk=None):
     """
     Breakdown allocation into generation carrier type.
 
@@ -44,7 +45,10 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     if sparse:
         share = as_sparse(share.fillna(0))
     logger.info('Expanding by source carrier')
-    return (ds * share).assign_attrs(ds.attrs)
+    if chunk is None:
+        return (ds * share).assign_attrs(ds.attrs)
+    else:
+        return (ds.chunk(chunk) * share.chunk(chunk)).compute().assign_attrs(ds.attrs)
             #.stack({'production': ('source', 'source_carrier')})
 
 
