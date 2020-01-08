@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def average_participation(n, snapshot, dims='all',
                     branch_components=None, aggregated=True, downstream=True,
-                    include_self_consumption=True, sparse=False):
+                    include_self_consumption=True, sparse=False, round=None):
     """
     Perform a Flow Tracing allocation.
 
@@ -98,6 +98,8 @@ def average_participation(n, snapshot, dims='all',
     sparse: boolean, default False
         Whether to compute the allocation with sparse arrays, this can save
         time for large networks
+    round: float, default None
+        Round the resulting allocation to a given precision in decimal digits.
 
     """
     dims = ['source', 'branch', 'sink'] if dims == 'all' else dims
@@ -139,14 +141,18 @@ def average_participation(n, snapshot, dims='all',
         else:
             A += diag(selfcon, ('source', 'sink'))
 
-
-    res = A.to_dataset(name='peer_to_peer').assign_attrs(method='Average Participation')
+    A = A.round(round) if round is not None else A
+    res = A.to_dataset(name='peer_to_peer')\
+           .assign_attrs(method='Average Participation')
 
     if 'branch' in dims:
         f = f_in if downstream else f_out
         T = dot(f * upper(K_dir.T), Q.fillna(0)) * dot(lower(K_dir.T), -R.fillna(0))
         T = T.assign_coords(snapshot=snapshot).assign_attrs(kind=kind)
+        T = T.round(round) if round is not None else T
         res = res.assign({'peer_on_branch_to_peer': T})
+    if round is not None:
+        res = res.round(round).assign_attrs(res.attrs)
     return res
 
 
@@ -193,6 +199,8 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
         If q is zero, only the impact of net load is taken into
         account. If q is one, only net generators are taken
         into account.
+    round: float, default None
+        Round the resulting allocation to a given precision in decimal digits.
 
     """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
@@ -238,6 +246,8 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     branch_components : list
         Components for which the allocation should be calculated.
         The default is None, which results in n.branch_components.
+    round: float, default None
+        Round the resulting allocation to a given precision in decimal digits.
 
     """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
@@ -257,7 +267,8 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     F = (H @ P).rename(injection_pattern='bus')
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Eqivalent Bilateral Exchanges'})
-    res = res if round is None else res.round(round)
+    if round is not None:
+        res = res.round(round).assign_attrs(res.attrs)
     return as_sparse(res) if sparse else res
 
 
