@@ -5,3 +5,4 @@ netallocation.egg-info/SOURCES.txt
 netallocation.egg-info/dependency_links.txt
 netallocation.egg-info/requires.txt
 netallocation.egg-info/top_level.txt
+test/test_grid.py
