@@ -10,9 +10,29 @@ from .grid import power_demand, power_production
 from .utils import as_sparse, obj_if_acc
 from sparse import COO
 import logging
+import xarray as xr
 from dask.diagnostics import ProgressBar
 
 logger = logging.getLogger(__name__)
+
+
+def is_sparse(ds):
+    """
+    Check if a xarray.Dataset or a xarray.DataArray is sparse.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset or xarray.DataArray
+
+    Returns
+    -------
+    Bool
+
+    """
+    if isinstance(ds, xr.Dataset):
+        return all(isinstance(ds[v].data, COO) for v in ds)
+    else:
+        return isinstance(ds.data, COO)
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
                           chunksize=None):
@@ -45,19 +65,20 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     sns = ds.get_index('snapshot')
     share = (power_production(n, sns, per_carrier=True) / power_production(n, sns))
     share = share.rename(bus='source', carrier='source_carrier')
-    if all(isinstance(ds[v].data, COO) for v in ds):
+    p2p = [k for k in ds if k.startswith('peer')]
+    if is_sparse(ds[p2p]):
         share = as_sparse(share.fillna(0))
     elif any(isinstance(ds[v], COO) for v in ds):
         TypeError('All variables of the dataset must either be sparse or dense.')
 
     logger.info('Expanding by source carrier')
     if chunksize is None:
-        res = ds * share
+        res = ds[p2p] * share
     else:
         chunk = {'snapshot': chunksize}
         with ProgressBar():
-            res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
-    return res.assign_attrs(ds.attrs)
+            res = (ds[p2p].chunk(chunk) * share.chunk(chunk)).compute()
+    return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
             #.stack({'production': ('source', 'source_carrier')})
 
 
@@ -92,16 +113,17 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
     sns = ds.get_index('snapshot')
     share = (power_demand(n, sns, per_carrier=True) / power_demand(n, sns))
     share = share.rename(bus='sink', carrier='sink_carrier')
-    if all(isinstance(ds[v].data, COO) for v in ds):
+    p2p = [k for k in ds if k.startswith('peer')]
+    if is_sparse(ds[p2p]):
         share = as_sparse(share.fillna(0))
     elif any(isinstance(ds[v], COO) for v in ds):
         TypeError('All variables of the dataset must either be sparse or dense.')
 
     logger.info('Expanding by sink carrier')
     if chunksize is None:
-        res = ds * share
+        res = ds[p2p] * share
     else:
         chunk = {'snapshot': chunksize}
         with ProgressBar():
-            res = (ds.chunk(chunk) * share.chunk(chunk)).compute()
-    return res.assign_attrs(ds.attrs)
+            res = (ds[p2p].chunk(chunk) * share.chunk(chunk)).compute()
+    return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)

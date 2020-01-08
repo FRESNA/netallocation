@@ -129,7 +129,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     line_colors = {'cur': "purple", 'exp': to_hex(to_rgba("red", 0.5), True)}
     gen_sizes = n.generators.groupby(['bus', 'carrier']).p_nom_opt.sum()
     store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()
-    branch_widths = pd.concat([n.lines.s_nom, n.links.p_nom],
+    branch_widths = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
                               keys=['Line', 'Link']).div(linewidth_factor)
 
     ## PLOT
@@ -144,8 +144,8 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            title = 'Generation \& Transmission Capacities',
            ax=ax)
 
-    branch_widths = pd.concat([n.lines.s_nom_opt-n.lines.s_nom,
-                               n.links.p_nom_opt-n.links.p_nom],
+    branch_widths = pd.concat([n.lines.s_nom_opt-n.lines.s_nom_min,
+                               n.links.p_nom_opt-n.links.p_nom_min],
                               keys=['Line', 'Link']).div(linewidth_factor)
 
     n.plot(bus_sizes = store_sizes/sus_size_factor,

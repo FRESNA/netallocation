@@ -4,8 +4,20 @@ import pandas as pd
 from .flow import flow_allocation as allocate_flow, network_flow
 
 
+# ma = n.buses_t.marginal_price.loc[sns].T
+# K = ntl.Incidence(n)
+# transmission_cost = - K.T @ ma
+# f = ntl.network_flow(n, sns).T
+# tso_profit = transmission_cost * f
+# revenue = n.loads_t.p.T.groupby(n.loads.bus).sum() * ma
+# expenses = (n.generators_t.p * n.generators.marginal_cost).T\
+#             .groupby(n.generators.bus).sum() + \
+#             (n.storage_units_t.p * n.storage_units.marginal_cost).T\
+#             .groupby(n.storage_units.bus).sum()
+# revenue.sum() - expenses.sum() - tso_profit.sum()
+
+
 # Network Meta Data
-####################################################################################################################
 # km
 def length(n):
     length_lines = pd.Series(n.lines.length.values,
@@ -27,11 +39,9 @@ def capacity(n):
                                names=['component', 'branch_i']))
     capacity = capacity_lines.append(capacity_links)
     return capacity.rename('capacity')
-####################################################################################################################
 
 
 # Branch Cost Model
-####################################################################################################################
 # €/MWkm*[CostModelUnit]
 def branch_cost_model(allocation, cost_model=None):
     if cost_model is None:
@@ -63,11 +73,9 @@ def branch_cost(n, allocation, cost_model=None, cost_factors=None):
 
     branch_cost = branch_cost.dropna()
     return branch_cost.rename('branch cost')
-####################################################################################################################
 
 
 # Total Transmission Cost
-####################################################################################################################
 def cost_normalisation(cost, total_cost):
     normalisation = total_cost / cost.sum()
     return normalisation
@@ -81,11 +89,9 @@ def total_transmission_cost(n, snapshot):
 
     total_cost = cap_lines + cap_links + mar_links
     return total_cost
-####################################################################################################################
 
 
 # Pricing Strategies
-####################################################################################################################
 def strategy_factor(n, allocation, pricing_strategy):
     if pricing_strategy is None:
         raise NameError('No valid pricing strategy.')
@@ -96,11 +102,9 @@ def strategy_factor(n, allocation, pricing_strategy):
     else:
         raise NameError('No valid pricing strategy.')
     return strategy_factor.rename('strategy factor')
-####################################################################################################################
 
 
 # Main Function
-####################################################################################################################
 # €
 def transmission_cost(n, snapshot,
                       allocation_method='Average participation',
@@ -135,4 +139,3 @@ def transmission_cost(n, snapshot,
                                                                    total_transmission_cost(n, snapshot))
 
     return transmission_cost.rename('transmission cost')
-####################################################################################################################

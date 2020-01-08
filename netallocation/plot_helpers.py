@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import yaml
 
-filename =  Path(__file__).parent.parent.joinpath('config.yaml')
+filename =  Path(__file__).parent.parent.joinpath('color_config.yaml')
 with open(filename) as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
