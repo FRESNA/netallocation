@@ -123,7 +123,7 @@ coord_fn = 'coords.nc'
 sparse_fn = 'sparse_data.h5'
 dense_fn = 'dense_data.h5'
 
-def store_dataset(dataset, folder):
+def store_dataset(ds, folder):
     """
     Export xarray.Dataset with mixed sparse and dense Dataarrays.
 
@@ -135,7 +135,7 @@ def store_dataset(dataset, folder):
 
     Parameters
     ----------
-    dataset : xarray.Dataset
+    ds : xarray.Dataset
         Dataset with sparse variables to be written
     folder : str
         Name of the directory to where to data is stored.
@@ -145,8 +145,8 @@ def store_dataset(dataset, folder):
     None.
 
     """
-    dataset = obj_if_acc(dataset)
-    ds = dataset.copy()
+    ds = obj_if_acc(ds)
+    ds = ds.copy()
     p = Path(folder)
     p.mkdir(parents=True, exist_ok=True)
     for d in [coord_fn, sparse_fn, dense_fn]:

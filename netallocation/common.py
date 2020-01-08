@@ -24,6 +24,22 @@ class AllocationAccessor:
 
     from .io import store_dataset as to_dir
     from .breakdown import expand_by_sink_type, expand_by_source_type
-    from .utils import as_dense, as_sparse, filter_null, lower, upper
+    from .utils import as_dense, as_sparse, filter_null, lower, upper, convert_vip_to_p2p
     from .plot import chord_diagram as plot_chord_diagram
 
+@xr.register_dataarray_accessor("ntl")
+class AllocationAccessor:
+    """
+    Accessor for netallocation package.
+
+    This accessor enables to call several functions to modify, plot and store
+    the allocation dataset.
+
+    """
+
+    def __init__(self, xarray_obj):
+        self._obj = xarray_obj
+
+    from .breakdown import expand_by_sink_type, expand_by_source_type
+    from .utils import as_dense, as_sparse, filter_null, lower, upper, convert_vip_to_p2p
+    from .plot import chord_diagram as plot_chord_diagram

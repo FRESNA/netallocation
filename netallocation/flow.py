@@ -152,7 +152,7 @@ def average_participation(n, snapshot, dims='all',
 
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
-                           sparse=False):
+                           sparse=False, round=None):
     """
     Perform a Marginal Participation allocation.
 
@@ -209,11 +209,13 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     P = dot(K, F).pipe(dedup_axis, ('bus', 'injection_pattern'))
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Marginal Participation'})
+    if round is not None:
+        res = res.round(round).assign_attrs(res.attrs)
     return as_sparse(res) if sparse else res
 
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
-                                   q=0.5, sparse=False):
+                                   q=0.5, sparse=False, round=None):
     """
     Perform a Equivalent Bilateral Exchanges allocation.
 
@@ -255,6 +257,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     F = (H @ P).rename(injection_pattern='bus')
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Eqivalent Bilateral Exchanges'})
+    res = res if round is None else res.round(round)
     return as_sparse(res) if sparse else res
 
 
