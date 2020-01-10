@@ -6,8 +6,8 @@ Created on Thu Mar  7 15:38:24 2019
 @author: fabian
 """
 
-from .grid import power_demand, power_production
-from .utils import as_sparse, obj_if_acc
+from .grid import power_demand, power_production, network_injection
+from .utils import as_sparse, obj_if_acc, is_sparse
 from sparse import COO
 import logging
 import xarray as xr
@@ -15,24 +15,6 @@ from dask.diagnostics import ProgressBar
 
 logger = logging.getLogger(__name__)
 
-
-def is_sparse(ds):
-    """
-    Check if a xarray.Dataset or a xarray.DataArray is sparse.
-
-    Parameters
-    ----------
-    ds : xarray.Dataset or xarray.DataArray
-
-    Returns
-    -------
-    Bool
-
-    """
-    if isinstance(ds, xr.Dataset):
-        return all(isinstance(ds[v].data, COO) for v in ds)
-    else:
-        return isinstance(ds.data, COO)
 
 def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
                           chunksize=None):
@@ -63,8 +45,10 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     """
     ds = obj_if_acc(ds)
     sns = ds.get_index('snapshot')
-    share = (power_production(n, sns, per_carrier=True) / power_production(n, sns))
+    share = power_production(n, sns, per_carrier=True) / power_production(n, sns)
     share = share.rename(bus='source', carrier='source_carrier')
+    # p = network_injection(n, ds.get_index('snapshot'))
+    # is_source = p.rename(bus='source') > 0
     p2p = [k for k in ds if k.startswith('peer')]
     if is_sparse(ds[p2p]):
         share = as_sparse(share.fillna(0))
@@ -79,7 +63,6 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
         with ProgressBar():
             res = (ds[p2p].chunk(chunk) * share.chunk(chunk)).compute()
     return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
-            #.stack({'production': ('source', 'source_carrier')})
 
 
 def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],

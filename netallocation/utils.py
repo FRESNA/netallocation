@@ -9,7 +9,7 @@ Created on Thu Mar  7 15:10:07 2019
 import pandas as pd
 import xarray as xr
 from pypsa.geo import haversine_pts
-from sparse import as_coo
+from sparse import as_coo, COO
 
 def upper(ds):
     ds = obj_if_acc(ds)
@@ -49,6 +49,24 @@ def as_dense(ds):
         return ds.assign(**{k: array_as_dense(ds[k]) for k in ds})
     else:
         return array_as_dense(ds)
+
+def is_sparse(ds):
+    """
+    Check if a xarray.Dataset or a xarray.DataArray is sparse.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset or xarray.DataArray
+
+    Returns
+    -------
+    Bool
+
+    """
+    if isinstance(ds, xr.Dataset):
+        return all(isinstance(ds[v].data, COO) for v in ds)
+    else:
+        return isinstance(ds.data, COO)
 
 
 def obj_if_acc(obj):
