@@ -9,8 +9,8 @@ Created on Wed Dec 18 20:51:24 2019
 import xarray as xr
 import pandas as pd
 from sparse import COO
-from .utils import as_dense
-
+from .utils import as_dense, upper, lower
+from .grid import network_flow
 
 def ensure_time_average(ds):
     if 'snapshot' in ds.dims:
@@ -61,5 +61,29 @@ def carrier_to_carrier(ds, split_local_nonlocal=False):
 def carrier_to_branch(ds):
     ds = ensure_time_average(ds)
     return ds.peer_on_branch_to_peer.sum(['source', 'sink'])
+
+
+def consider_branch_extension_on_flow(ds, n):
+    orig_branch_cap = xr.DataArray(dims='branch',
+            data = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
+                      keys=['Line', 'Link'], names=('component', 'branch_i')))
+    flow = network_flow(n, snapshots=ds.get_index('snapshot'))
+    vfp = ds.virtual_flow_pattern
+    # first extention flow
+    flow_shares = vfp / flow.sel(snapshot=vfp.snapshot)
+    extension_flow_pos = upper(flow - orig_branch_cap).ntl.as_sparse()
+    extension_flow_neg = lower(flow + orig_branch_cap).ntl.as_sparse()
+    extension_flow = extension_flow_pos + extension_flow_neg
+    extension_flow = extension_flow * upper(flow_shares)
+
+    # now within flow
+    within_cap_flow = flow.where(abs(flow) < orig_branch_cap).ntl.as_sparse()
+    within_cap_flow = within_cap_flow * abs(flow_shares)
+
+    return xr.Dataset({'on_extension': extension_flow,
+                       'on_original_cap': within_cap_flow},
+                      attrs = {'type': 'Extension flow allocation'
+                               f'with method: {ds.attrs["method"]}'})
+
 
 

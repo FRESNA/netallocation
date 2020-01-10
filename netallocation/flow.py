@@ -157,6 +157,8 @@ def average_participation(n, snapshot, dims='all',
 
 
 
+
+
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
                            sparse=False, round=None):
     """
@@ -205,21 +207,36 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
     H = PTDF(n, branch_components=branch_components, snapshot=snapshot)
+    # old code:
+        # f = network_flow(n, snapshot, branch_components)
+        # p = K @ f
+        # p_plus = upper(p)
+        # # unbalanced flow from positive injection:
+        # f_plus = H @ p_plus
+        # k_plus = (q * f - f_plus) / p_plus.sum()
+        # F = (H + k_plus) * p
     K = Incidence(n, branch_components=branch_components)
-    f = network_flow(n, snapshot, branch_components)
+    f = network_flow(n, [snapshot], branch_components)
     p = K @ f
     p_plus = upper(p)
-    # unbalanced flow from positive injection:
-    f_plus = H @ p_plus
-    k_plus = (q * f - f_plus) / p_plus.sum()
-    F = (H + k_plus) * p
-#    pattr = {'dimension 0': 'bus', 'dimension 1': 'injection pattern'}
-    P = dot(K, F).pipe(dedup_axis, ('bus', 'injection_pattern'))
+    p_minus = lower(p)
+    new_dims = ('bus', 'injection_pattern')
+    P = diag(p.loc[:, snapshot], new_dims)
+    s = 0.5 - abs(q - 0.5)
+    gamma = float(p_plus.sum())
+    A = dedup_axis(dot(p_minus, p_plus.T) / gamma, new_dims)
+    B = dedup_axis(dot(p_plus, p_minus.T) / gamma, new_dims)
+    C = dedup_axis(dot(p_minus, p_minus.T) / gamma, new_dims)
+    D = dedup_axis(dot(p_plus, p_plus.T) / gamma, new_dims)
+    P = (q * (upper(P) + A) + (1 - q) * (lower(P) - B)
+          + s * (P + C - D)).assign_coords(snapshot = snapshot)
+    F = (H @ P).rename(injection_pattern='bus')
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
                   attrs={'method': 'Marginal Participation'})
     if round is not None:
         res = res.round(round).assign_attrs(res.attrs)
     return as_sparse(res) if sparse else res
+
 
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,

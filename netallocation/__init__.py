@@ -11,6 +11,7 @@ from .grid import (Incidence, network_flow, network_injection,
                    power_demand, power_production)
 from .linalg import diag, inv, pinv
 from .io import load_dataset, store_dataset
+from .utils import as_dense, as_sparse
 
 from . import (utils, breakdown, grid, flow, linalg, plot, cost,
                plot_helpers, test, io, common, process)
