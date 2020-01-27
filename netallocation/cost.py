@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
+from pypsa.descriptors import get_switchable_as_dense as get_as_dense
+from xarray import DataArray, Dataset
 
-from .flow import flow_allocation as allocate_flow, network_flow
-
-
+from .flow import flow_allocation, network_flow
+from .utils import convert_vip_to_p2p, group_per_bus_carrier
+from .breakdown import expand_by_source_type
+from .grid import power_production, power_demand
 # ma = n.buses_t.marginal_price.loc[sns].T
 # K = ntl.Incidence(n)
 # transmission_cost = - K.T @ ma
@@ -15,6 +18,36 @@ from .flow import flow_allocation as allocate_flow, network_flow
 #             (n.storage_units_t.p * n.storage_units.marginal_cost).T\
 #             .groupby(n.storage_units.bus).sum()
 # revenue.sum() - expenses.sum() - tso_profit.sum()
+
+
+def p2p_allocated_sink_costs(n, ds, snapshots=None):
+    if snapshots is None:
+        snapshots = n.snapshots
+    if isinstance(ds, str):
+        ds = flow_allocation(n, snapshots, ds)
+    ds = expand_by_source_type(ds, n)
+    if 'carrier' not in n.stores:
+        n.stores['carrier'] = n.stores.bus.map(n.buses.carrier)
+    comps = ['Generator', 'StorageUnit', 'Store']
+    prodcost_pu = DataArray(pd.concat(
+            (group_per_bus_carrier(get_as_dense(n, c, 'marginal_cost', snapshots), c, n)
+             for c in comps), axis=1), dims=['snapshot', 'marginal_cost'])\
+            .unstack('marginal_cost', fill_value=0)\
+            .rename(bus='source', carrier='source_carrier')
+
+    branchcost_pu = pd.concat([get_as_dense(n, 'Link', 'marginal_cost', snapshots)],
+                              keys=['Link'], axis=1, names=['component', 'branch_i'])\
+                        .loc[:, lambda df: (df > 0).any()]
+    branchcost_pu = DataArray(branchcost_pu).unstack('dim_1')
+
+    cost_per_sink_alloc = (prodcost_pu * ds).sum(['source', 'source_carrier']).peer_to_peer
+
+    marg_price = DataArray(n.buses_t.marginal_price, dims=['snapshot', 'sink'])
+    cost_per_sink_opt = power_demand(n, snapshots).rename(bus='sink') * marg_price
+
+    return Dataset({'from_allocation': cost_per_sink_alloc,
+                    'from_shadow_price': cost_per_sink_opt})
+
 
 
 # Network Meta Data

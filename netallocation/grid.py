@@ -11,7 +11,7 @@ import xarray as xr
 from xarray import DataArray
 import numpy as np
 from .linalg import pinv, diag, null, dot
-from .utils import get_branches_i
+from .utils import get_branches_i, group_per_bus_carrier
 from sparse import as_coo
 import logging
 import networkx as nx
@@ -309,59 +309,58 @@ def network_injection(n, snapshots=None, branch_components=None):
     return (K.clip(min=0) @ f0 - K.clip(max=0) @ f1).T
 
 
-def power_production(n, snapshots=None, components=['Generator', 'StorageUnit'],
-                     per_carrier=False, update=False):
-    if snapshots is None:
-        snapshots = n.snapshots
-    if not per_carrier:
-        if 'p_plus' not in n.buses_t or update:
-            n.buses_t.p_plus = DataArray(pd.concat(
-                    [n.pnl(c).p.clip(0).rename(columns=n.df(c).bus)
-                     for c in components], axis=1).sum(level=0, axis=1)\
-                    .reindex(columns=n.buses.index, fill_value=0),
-                    dims=['snapshot', 'bus'])
-        return n.buses_t.p_plus.loc[snapshots]
-    else:
-        if 'p_plus_per_carrier' not in n.buses_t or update:
-            p = pd.concat(((n.pnl(c).p.T.assign(carrier=n.df(c).carrier,
-                                                bus=n.df(c).bus)
-                            .groupby(['bus', 'carrier']).sum().T
-                            .where(lambda x: x > 0))
-                            for c in components), axis=1)\
-                    .rename_axis(columns=['bus', 'carrier'])
-            n.buses_t.p_plus_per_carrier = \
-                DataArray(p, dims=['snapshot','p']).unstack('p')\
-                    .reindex(bus=n.buses.index, fill_value=0)
-    return n.buses_t.p_plus_per_carrier.loc[snapshots]
+def _one_port_attr(n, snapshots, attr='p', comps=None):
+    """
+    Retrieve a time-dependent attribute for given component, grouped by bus
+    and carrier.
 
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : (subset of) n.snashots
+    attr : str
+        Attribute which should be grouped per bus and carriert.
+        The default is 'p'.
 
-def power_demand(n, snapshots=None, components=['Load', 'StorageUnit'],
-                 per_carrier=False, update=False):
+    Returns
+    -------
+    xr.DataArray
+        Grouped attribute.
+
+    """
+    if comps is None:
+        comps = [c for c in sorted(n.one_port_components) if not n.df(c).empty]
+    if 'carrier' not in n.loads:
+        n.loads['carrier'] = 'Load'
+
+    return xr.DataArray(pd.concat((group_per_bus_carrier(
+                        n.pnl(c)[attr].loc[snapshots] * n.df(c).sign, c, n)
+                        for c in comps), axis=1), dims=['snapshot', 'p'])\
+                     .unstack('p', fill_value=0)
+
+def power_production(n, snapshots=None, per_carrier=False, update=False):
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
+    if not hasattr(n, 'p_plus') or update:
+        prod = _one_port_attr(n, n.snapshots)
+        n.buses_t['p_plus'] = prod.sel(carrier=(prod>=0).any(['snapshot', 'bus']))\
+                                  .clip(min=0)
+    prod = n.buses_t.p_plus.sel(snapshot=snapshots)
     if not per_carrier:
-        if 'p_minus' not in n.buses_t or update:
-            n.buses_t.p_minus = DataArray(
-                    sum(n.pnl(c).p.T.mul(n.df(c).sign, axis=0).clip(upper=0)
-                        .assign(bus=n.df(c).bus).groupby('bus').sum()
-                        .reindex(index=n.buses.index, fill_value=0).T
-                        for c in components).abs().rename_axis('sink', axis=1),
-                    dims=['snapshot', 'bus'])
-        return n.buses_t.p_minus.reindex({'snapshot': snapshots})
+        prod = prod.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
+    return prod
 
-    if 'p_minus_per_carrier' not in n.buses_t or update:
-        if 'carrier' not in n.loads:
-            n.loads = n.loads.assign(carrier='load')
-        d = -(pd.concat([(n.pnl(c).p.T.mul(n.df(c).sign, axis=0)
-                .assign(carrier=n.df(c).carrier, bus=n.df(c).bus)
-                .groupby(['bus', 'carrier']).sum().T
-                .where(lambda x: x < 0)) for c in components], axis=1)
-                .rename_axis(['bus', 'carrier'], axis=1))
-        n.loads = n.loads.drop(columns='carrier')
-        n.buses_t.p_minus_per_carrier = \
-            DataArray(d, dims=['snapshot','d']).unstack('d')\
-                .reindex(bus=n.buses.index, fill_value=0)
-    return n.buses_t.p_minus_per_carrier.loc[snapshots]
+def power_demand(n, snapshots=None, per_carrier=False, update=False):
+    if snapshots is None:
+        snapshots = n.snapshots.rename('snapshot')
+    if not hasattr(n, 'p_minus') or update:
+        demand = _one_port_attr(n, n.snapshots)
+        n.buses_t['p_minus'] = (- demand).sel(carrier=(demand<=0)
+                                          .any(['snapshot', 'bus'])).clip(min=0)
+    demand = n.buses_t.p_minus.sel(snapshot=snapshots)
+    if not per_carrier:
+        demand = demand.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
+    return demand
 
 
 def self_consumption(n, snapshots=None, update=False):
@@ -372,9 +371,8 @@ def self_consumption(n, snapshots=None, update=False):
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
     if 'p_self' not in n.buses_t or update:
-        n.buses_t.p_self = (xr.concat([power_production(n, n.snapshots),
-                                       power_demand(n, n.snapshots)], 'bus')
-                            .groupby('bus').min()
-                            .reindex(bus=n.buses.index, fill_value=0))
+        n.buses_t.p_self = (xr.concat(
+            [power_production(n, n.snapshots), power_demand(n, n.snapshots)], 'bus')
+            .groupby('bus').min().reindex(bus=n.buses.index, fill_value=0))
     return n.buses_t.p_self.loc[snapshots]
 

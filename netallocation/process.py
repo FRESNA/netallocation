@@ -84,7 +84,7 @@ def consider_branch_extension_on_flow(ds, n, chunksize=30):
     chunk = {'snapshot': chunksize}
     with ProgressBar(minimum=2.):
         extension_flow = (extension_flow.chunk(chunk)
-                          * upper(flow_shares).chunk(chunk)).compute()
+                          * abs(flow_shares).chunk(chunk)).compute()
         within_cap_flow = (within_cap_flow.chunk(chunk)
                            * abs(flow_shares).chunk(chunk)).compute()
 

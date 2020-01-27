@@ -103,6 +103,8 @@ def convert_vip_to_p2p(ds):
     """
     Converts a virtual injection pattern into a peer-to-peer allocation.
 
+    If a peer-to-peer array is already existent, nothing is done.
+
     Parameters
     -----------
     ds : xarray.Dataset or xarray.DataArray
@@ -113,9 +115,17 @@ def convert_vip_to_p2p(ds):
     passed, passes the converted DataArray if a DataArray was passed.
 
     """
+    if 'peer_to_peer' in ds:
+        return ds
     ds = obj_if_acc(ds)
     da = ds.virtual_injection_pattern if isinstance(ds, xr.Dataset) else ds
     p2p = upper(da.rename(injection_pattern='sink', bus='source') -
                 da.rename(injection_pattern='source', bus='sink'))
     return ds.assign(peer_to_peer = p2p) if isinstance(ds, xr.Dataset) else p2p
+
+
+def group_per_bus_carrier(df, c, n):
+    df = df.groupby(n.df(c)[['bus', 'carrier']].apply(tuple, axis=1), axis=1).sum()
+    df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
+    return df
 

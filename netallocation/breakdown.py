@@ -7,7 +7,7 @@ Created on Thu Mar  7 15:38:24 2019
 """
 
 from .grid import power_demand, power_production, network_injection
-from .utils import as_sparse, obj_if_acc, is_sparse
+from .utils import as_sparse, obj_if_acc, is_sparse, convert_vip_to_p2p
 from sparse import COO
 import logging
 import xarray as xr
@@ -16,8 +16,7 @@ from dask.diagnostics import ProgressBar
 logger = logging.getLogger(__name__)
 
 
-def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
-                          chunksize=None):
+def expand_by_source_type(ds, n, chunksize=None):
     """
     Breakdown allocation into generation carrier type.
 
@@ -44,9 +43,11 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
 
     """
     ds = obj_if_acc(ds)
+    ds = convert_vip_to_p2p(ds)
     sns = ds.get_index('snapshot')
-    share = power_production(n, sns, per_carrier=True) / power_production(n, sns)
-    share = share.rename(bus='source', carrier='source_carrier')
+    prod = power_production(n, sns, per_carrier=True)
+    share = (prod / prod.sum('carrier'))\
+             .rename(bus='source', carrier='source_carrier').fillna(0)
     # p = network_injection(n, ds.get_index('snapshot'))
     # is_source = p.rename(bus='source') > 0
     p2p = [k for k in ds if k.startswith('peer')]
@@ -65,8 +66,7 @@ def expand_by_source_type(ds, n, components=['Generator', 'StorageUnit'],
     return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
 
 
-def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
-                        chunksize=None):
+def expand_by_sink_type(ds, n, chunksize=None):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
 
@@ -93,9 +93,11 @@ def expand_by_sink_type(ds, n, components=['Load', 'StorageUnit'],
 
     """
     ds = obj_if_acc(ds)
+    ds = convert_vip_to_p2p(ds)
     sns = ds.get_index('snapshot')
-    share = (power_demand(n, sns, per_carrier=True) / power_demand(n, sns))
-    share = share.rename(bus='sink', carrier='sink_carrier')
+    demand = power_demand(n, sns, per_carrier=True)
+    share = (demand / demand.sum('carrier'))\
+             .rename(bus='sink', carrier='sink_carrier')
     p2p = [k for k in ds if k.startswith('peer')]
     if is_sparse(ds[p2p]):
         share = as_sparse(share.fillna(0))
