@@ -201,7 +201,7 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
             raise NotImplementedError('Non per unit system '
                                       'for non-linear Ybus matrix not '
                                       'implemented')
-        return Y + diag(shunt_admittance(n, pu_system))
+        return Y + diag(shunt_admittance(n, pu_system).sel(bus=Y.bus)).values
 
         def get_Ybus(sub):
             sub.calculate_PTDF()
@@ -219,21 +219,19 @@ def Zbus(n, branch_components=['Line'], snapshot=None,
     the default, they are set to n.branch_components and n.snapshots
     respectively.
     """
-    if linear:
-        return pinv(Ybus(n, branch_components=branch_components,
-                         snapshot=snapshot,
-                         pu_system=pu_system, linear=linear))
-    else:
-        return Ybus(n, branch_components, snapshot,
-                     pu_system=pu_system, linear=False).apply(pinv)
+    return pinv(Ybus(n, branch_components=branch_components,
+                     snapshot=snapshot,
+                     pu_system=pu_system, linear=linear))
 
 
 def voltage(n, snapshots=None, linear=True, pu_system=True):
+    if snapshots is None:
+        snapshots = n.snapshots
     if linear:
         v = n.buses_t.v_ang.loc[snapshots] + 1
 #        v = np.exp(- 1.j * n.buses_t.v_ang).T[snapshots]
     else:
-        v = (n.buses_t.v_mag_pu * np.exp(- 1.j * n.buses_t.v_ang)).loc[snapshots]
+        v = (n.buses_t.v_mag_pu * np.exp(1.j * n.buses_t.v_ang)).loc[snapshots]
 
     if not pu_system:
         v *= n.buses.v_nom
@@ -262,49 +260,49 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
     p = 'p0' if ingoing else 'p1'
     axis = int(isinstance(snapshots, (list, pd.Index)))
     f = pd.concat([n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps],
-             keys=comps, axis=axis).rename_axis(['component', 'branch_i'], axis=axis)
-
-    if axis:
-        f = DataArray(f.T, dims=['branch', 'snapshot'])
-    else:
-        f = DataArray(f, dims='branch').assign_coords(snapshot=snapshots)
-    if linear:
-        return f
-    else:
+             keys=comps, axis=axis)
+    if not linear:
         q = 'q0' if ingoing else 'q1'
-        return f + 1.j * pd.concat((n.pnl(b)[q].loc[snapshots, n.df(b).index]
-                                    for b in branch_components), axis=1).values
+        pcomps = sorted(set(branch_components) & n.passive_branch_components)
+        fq = pd.concat([n.pnl(b)[q].loc[snapshots, n.df(b).index] for b in pcomps],
+             keys=pcomps, axis=axis)
+        f = f.add(1.j * fq, fill_value=0)
+    f = f.rename_axis(['component', 'branch_i'], axis=axis)
+    if axis:
+        return DataArray(f.T, dims=['branch', 'snapshot'])
+    else:
+        return DataArray(f, dims='branch').assign_coords(snapshot=snapshots)
 
 
-def branch_inflow(n, snapshots=None, branch_components=None):
+def branch_inflow(n, snapshots=None, branch_components=None, linear=True):
     """
     Returns the flow that goes into a branch. If branch_component or
     snapshots is None, which is the default, they are set to n.branch_components
     and n.snapshots respectively.
     """
-    f0 = network_flow(n, snapshots, branch_components).T
-    f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
+    f0 = network_flow(n, snapshots, branch_components, linear=linear).T
+    f1 = network_flow(n, snapshots, branch_components, False, linear).T
     return f0.where(f0 > 0, - f1)
 
 
-def branch_outflow(n, snapshots=None, branch_components=None):
+def branch_outflow(n, snapshots=None, branch_components=None, linear=True):
     """
     Returns the flow that comes out of a branch. If branch_component or
     snapshots is None, which is the default, they are set to n.branch_components
     and n.snapshots respectively.
     """
-    f0 = network_flow(n, snapshots, branch_components).T
-    f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
+    f0 = network_flow(n, snapshots, branch_components, linear=linear).T
+    f1 = network_flow(n, snapshots, branch_components, False, linear).T
     return f0.where(f0 < 0,  - f1)
 
 
-def network_injection(n, snapshots=None, branch_components=None):
+def network_injection(n, snapshots=None, branch_components=None, linear=True):
     """
     Function to determine the total network injection including passive and
     active branches.
     """
-    f0 = network_flow(n, snapshots, branch_components).T
-    f1 = network_flow(n, snapshots, branch_components, ingoing=False).T
+    f0 = network_flow(n, snapshots, branch_components, linear=linear).T
+    f1 = network_flow(n, snapshots, branch_components, False, linear).T
     K = Incidence(n, branch_components)
     return (K.clip(min=0) @ f0 - K.clip(max=0) @ f1).T
 
