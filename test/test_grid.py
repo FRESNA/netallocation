@@ -78,7 +78,7 @@ def test_pseudo_impedance_ac_dc_large():
 def test_average_participation_aggregated():
     sn = n.snapshots[0]
     K = ntl.Incidence(n)
-    A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all')
+    A = ntl.flow.flow_allocation(n, sn, method='ap')
     #check total injection
     total_injection = A.peer_to_peer.sum('sink')
     target = power_production(n, sn).rename(bus='source')
@@ -94,7 +94,7 @@ def test_average_participation_aggregated():
 def test_average_participation_direct():
     sn = n.snapshots[0]
     K = ntl.Incidence(n)
-    A = ntl.flow.flow_allocation(n, sn, method='ap', dims='all', aggregated=False)
+    A = ntl.flow.flow_allocation(n, sn, method='ap', aggregated=False)
     #check total injection
     total_injection = A.peer_to_peer.sum('sink')
     target = power_production(n, sn).rename(bus='source')
