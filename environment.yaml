@@ -1,0 +1,16 @@
+name: netallocation
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - xarray
+  - progressbar2
+  - pypsa
+  - sparse
+  - dask
+  - pathlib
+  - h5py
+  - scipy
+  - pyyaml
+  - geopandas
+  - pandas>=0.24.0

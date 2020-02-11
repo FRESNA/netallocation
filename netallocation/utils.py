@@ -99,6 +99,31 @@ def bus_distances(n):
     return xr.DataArray(d, dims=['source', 'sink'])
 
 
+def convert_p2p_to_vfp(ds, q=0.5):
+    """
+    Converts a peer-on-branch-to-peer into a virtual flow allocation.
+
+    If a virtual flow pattern array is already existent, nothing is done.
+
+    Parameters
+    -----------
+    ds : xarray.Dataset or xarray.DataArray
+
+    Returns
+    -------
+    A xarray.Dataset with the virtual flow pattern variable appended if a
+    Dataset was passed, passes the converted DataArray if a DataArray was passed.
+
+    """
+    if 'peer_to_peer' in ds:
+        return ds
+    ds = obj_if_acc(ds)
+    is_dataset = isinstance(ds, xr.Dataset)
+    da = ds.peer_on_branch_to_peer if is_dataset else ds
+    vfp = q * da.sum('sink').rename(source='bus') + \
+          (1 - q) * da.sum('source').rename(sink='bus')
+    return ds.assign(virtual_flow_pattern = vfp) if is_dataset else vfp
+
 def convert_vip_to_p2p(ds):
     """
     Converts a virtual injection pattern into a peer-to-peer allocation.
@@ -118,10 +143,11 @@ def convert_vip_to_p2p(ds):
     if 'peer_to_peer' in ds:
         return ds
     ds = obj_if_acc(ds)
-    da = ds.virtual_injection_pattern if isinstance(ds, xr.Dataset) else ds
+    is_dataset = isinstance(ds, xr.Dataset)
+    da = ds.virtual_injection_pattern if is_dataset else ds
     p2p = upper(da.rename(injection_pattern='sink', bus='source') -
                 da.rename(injection_pattern='source', bus='sink'))
-    return ds.assign(peer_to_peer = p2p) if isinstance(ds, xr.Dataset) else p2p
+    return ds.assign(peer_to_peer = p2p) if is_dataset else p2p
 
 
 def group_per_bus_carrier(df, c, n):

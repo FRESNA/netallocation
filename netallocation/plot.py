@@ -94,7 +94,8 @@ def chord_diagram(ds, agg='mean', minimum_quantile=0,
 def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                    sus_size_factor=1e4,
                    carrier_colors=None, carrier_names=None,
-                   figsize=(10, 5), boundaries=[-10. , 30, 36, 70]):
+                   figsize=(10, 5), boundaries=[-10. , 30, 36, 70],
+                   **kwargs):
     """
     Plot a pypsa.Network generation and storage capacity
 
@@ -126,7 +127,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     if carrier_colors is None:
         carrier_colors = n.carriers.color
         fallback = pd.Series(n.carriers.index.str.title(), n.carriers.index)
-        carrier_names = n.carriers.nice_name.fillna(fallback)
+        carrier_names = n.carriers.nice_name.replace('', np.nan).fillna(fallback)
 
     line_colors = {'cur': "purple", 'exp': to_hex(to_rgba("red", 0.5), True)}
     gen_sizes = n.generators.groupby(['bus', 'carrier']).p_nom_opt.sum()
@@ -144,7 +145,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            geomap = '10m',
            boundaries = boundaries,
            title = 'Generation \& Transmission Capacities',
-           ax=ax)
+           ax=ax, **kwargs)
 
     branch_widths = pd.concat([n.lines.s_nom_opt-n.lines.s_nom_min,
                                n.links.p_nom_opt-n.links.p_nom_min],
@@ -157,7 +158,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            geomap = '10m',
            boundaries = boundaries,
            title = 'Storages Capacities \& Transmission Expansion',
-           ax = ax2)
+           ax = ax2, **kwargs)
     ax.axis('off')
 #    ax.artists[2].set_title('Carriers')
 
@@ -207,7 +208,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     if not carrier_names is None:
         colors = colors.rename(carrier_names)
     fig.artists.append(fig.legend(*handles_labels_for(colors),
-                                  loc='center left', bbox_to_anchor=(1, 0.5),
+                                  loc='upper left', bbox_to_anchor=(1, 0.45),
                                   frameon=False,
                                   title='Storage carrier'))
 
