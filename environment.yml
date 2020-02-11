@@ -13,4 +13,4 @@ dependencies:
   - scipy
   - pyyaml
   - geopandas
-  - pandas>=0.24.0
+  - pandas
