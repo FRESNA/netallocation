@@ -534,7 +534,6 @@ _non_sequential_funcs = [zbus_transmission, with_and_without_transit]
 
 
 def flow_allocation(n, snapshots=None, method='Average participation',
-                    parallelized=False, nprocs=None,
                     round_floats=8, **kwargs):
     """
     Allocate or decompose the network flow with different methods.

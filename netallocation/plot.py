@@ -134,6 +134,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()
     branch_widths = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
                               keys=['Line', 'Link']).div(linewidth_factor)
+    kwargs.setdefault('geomap', '10m')
 
     ## PLOT
     fig, (ax, ax2)  = plt.subplots(1, 2, figsize=figsize,
@@ -142,7 +143,6 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            bus_colors = carrier_colors,
            line_widths = branch_widths,
            line_colors = {'Line':line_colors['cur'], 'Link': line_colors['cur']},
-           geomap = '10m',
            boundaries = boundaries,
            title = 'Generation \& Transmission Capacities',
            ax=ax, **kwargs)
@@ -155,7 +155,6 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            bus_colors = carrier_colors,
            line_widths = branch_widths,
            line_colors = {'Line':line_colors['exp'], 'Link': line_colors['exp']},
-           geomap = '10m',
            boundaries = boundaries,
            title = 'Storages Capacities \& Transmission Expansion',
            ax = ax2, **kwargs)
@@ -216,19 +215,24 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     return fig, (ax, ax2)
 
 
-def annotate_bus_names(n, ax, shift=-0.012, size=12, color='k'):
+def annotate_bus_names(n, ax, shift=-0.012, size=12, color='k',
+                       **kwargs):
+    kwargs.setdefault('zorder', 8)
     for index in n.buses.index:
         x, y = n.buses.loc[index, ['x', 'y']] + shift
-        ax.annotate(index, (x, y), zorder=6, size=size, color=color)
+        ax.text(x, y, index, size=size, color=color, ha="center", va="center",
+                **kwargs)
     return ax
 
 
-def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True):
+def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
+                          **kwargs):
     def replace_branche_names(s):
         return s.replace('Line', 'AC ').replace('Link', 'DC ')\
                 .replace('component', 'Line Type').replace('branch_i', '')\
                 .replace('branch\_i', '')
 
+    kwargs.setdefault('zorder', 8)
     branches = n.branches()
     branches = branches.assign(**{'loc0x': branches.bus0.map(n.buses.x),
                              'loc0y': branches.bus0.map(n.buses.y),
@@ -241,8 +245,8 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True):
             index = replace_branche_names(' '.join(index))
         else:
             index = index[1]
-        ax.annotate(index, ((loc0x+loc1x)/2 + shift, (loc0y+loc1y)/2 + shift),
-                    zorder=8, size=size, color=color)
+        ax.text((loc0x+loc1x)/2 + shift, (loc0y+loc1y)/2 + shift, index,
+                    size=size, color=color, **kwargs)
 
 
 def fact_sheet(n, fn_out=None):

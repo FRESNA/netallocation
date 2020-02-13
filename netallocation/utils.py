@@ -115,14 +115,14 @@ def convert_p2p_to_vfp(ds, q=0.5):
     Dataset was passed, passes the converted DataArray if a DataArray was passed.
 
     """
-    if 'peer_to_peer' in ds:
+    if 'virtual_flow_pattern' in ds:
         return ds
     ds = obj_if_acc(ds)
     is_dataset = isinstance(ds, xr.Dataset)
     da = ds.peer_on_branch_to_peer if is_dataset else ds
     vfp = q * da.sum('sink').rename(source='bus') + \
           (1 - q) * da.sum('source').rename(sink='bus')
-    return ds.assign(virtual_flow_pattern = vfp) if is_dataset else vfp
+    return ds.assign(virtual_flow_pattern = vfp.T) if is_dataset else vfp
 
 def convert_vip_to_p2p(ds):
     """
