@@ -10,9 +10,8 @@ setup(
     url='https://github.com/FRESNA/netallocation',
     license='GPLv3',
     include_package_data=True,
-    install_requires=['pypsa','pandas', 'pyyaml', 'xarray', 'cython', 'pyproj',
-                      'progressbar2', 'sparse', 'dask', 'h5py', 'scipy',
-                      'geopandas', 'pyyaml', 'cartopy'],
+    install_requires=['pypsa','pandas', 'pyyaml', 'xarray', 'progressbar2',
+                      'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml'],
     classifiers=[
 #        'Development Status :: 3 - Alpha',
         'Environment :: Console',

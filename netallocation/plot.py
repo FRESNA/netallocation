@@ -13,10 +13,10 @@ from pypsa.plot import projected_area_factor
 import pandas as pd
 import matplotlib.pyplot as plt
 import pypsa
-import cartopy.crs as ccrs
 import numpy as np
 from matplotlib.colors import to_hex, to_rgba
-
+import logging
+logger = logging.getLogger(__file__)
 
 
 def chord_diagram(ds, agg='mean', minimum_quantile=0,
@@ -134,11 +134,18 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()
     branch_widths = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
                               keys=['Line', 'Link']).div(linewidth_factor)
-    kwargs.setdefault('geomap', '10m')
 
     ## PLOT
+    try:
+        import cartopy.crs as ccrs
+        projection = ccrs.EqualEarth()
+        kwargs.setdefault('geomap', '50m')
+    except ImportError:
+        projection = None
+        logger.warn('Could not import cartopy, drawing map disabled')
+
     fig, (ax, ax2)  = plt.subplots(1, 2, figsize=figsize,
-                                   subplot_kw={"projection":ccrs.EqualEarth()})
+                                   subplot_kw={"projection":projection})
     n.plot(bus_sizes = gen_sizes/gen_size_factor,
            bus_colors = carrier_colors,
            line_widths = branch_widths,
