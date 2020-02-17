@@ -94,7 +94,7 @@ def expand_by_sink_type(ds, n, chunksize=None):
 
     """
     ds = obj_if_acc(ds)
-    ds = convert_vip_to_p2p(ds)
+    ds = vip_to_p2p(ds)
     sns = ds.get_index('snapshot')
     demand = power_demand(n, sns, per_carrier=True)
     share = (demand / demand.sum('carrier'))\
