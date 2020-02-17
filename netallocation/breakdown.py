@@ -7,7 +7,8 @@ Created on Thu Mar  7 15:38:24 2019
 """
 
 from .grid import power_demand, power_production, network_injection
-from .utils import as_sparse, obj_if_acc, is_sparse, convert_vip_to_p2p
+from .utils import as_sparse, obj_if_acc, is_sparse
+from .convert import vip_to_p2p
 from sparse import COO
 import logging
 import xarray as xr
@@ -43,7 +44,7 @@ def expand_by_source_type(ds, n, chunksize=None):
 
     """
     ds = obj_if_acc(ds)
-    ds = convert_vip_to_p2p(ds)
+    ds = vip_to_p2p(ds)
     sns = ds.get_index('snapshot')
     prod = power_production(n, sns, per_carrier=True)
     share = (prod / prod.sum('carrier'))\

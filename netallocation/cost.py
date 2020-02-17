@@ -4,9 +4,11 @@ from pypsa.descriptors import get_switchable_as_dense as get_as_dense
 from xarray import DataArray, Dataset
 
 from .flow import flow_allocation, network_flow
-from .utils import convert_vip_to_p2p, group_per_bus_carrier
+from .utils import group_per_bus_carrier
+from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
 from .grid import power_production, power_demand
+
 # ma = n.buses_t.marginal_price.loc[sns].T
 # K = ntl.Incidence(n)
 # transmission_cost = - K.T @ ma
@@ -53,25 +55,11 @@ def p2p_allocated_sink_costs(n, ds, snapshots=None):
 # Network Meta Data
 # km
 def length(n):
-    length_lines = pd.Series(n.lines.length.values,
-                             pd.MultiIndex.from_tuples([('Line', idx) for idx in n.lines.length.index],
-                             names=['component', 'branch_i']))
-    length_links = pd.Series(n.links.length.values,
-                             pd.MultiIndex.from_tuples([('Link', idx) for idx in n.links.length.index],
-                             names=['component', 'branch_i']))
-    length = length_lines.append(length_links)
-    return length.rename('length')
+    return n.branches()['length'].rename_axis(['component', 'branch_i'])
 
 # MW
 def capacity(n):
-    capacity_lines = pd.Series(n.lines.s_nom_opt.values,
-                               pd.MultiIndex.from_tuples([('Line', idx) for idx in n.lines.s_nom_opt.index],
-                               names=['component', 'branch_i']))
-    capacity_links = pd.Series(n.links.p_nom_opt.values,
-                               pd.MultiIndex.from_tuples([('Link', idx) for idx in n.links.p_nom_opt.index],
-                               names=['component', 'branch_i']))
-    capacity = capacity_lines.append(capacity_links)
-    return capacity.rename('capacity')
+    return n.branches().eval('s_nom_opt + p_nom_opt').rename_axis(['component', 'branch_i'])
 
 
 # Branch Cost Model
@@ -145,10 +133,10 @@ def transmission_cost(n, snapshot,
                       allocation=None, cost_factors=None,
                       favor_counter_flows=True):
 
-    if allocation is None: allocation = allocate_flow(n, snapshot, method=allocation_method)
-
-    if cost_model is None: cost_model = pricing_strategy
-
+    if allocation is None:
+        allocation = flow_allocation(n, snapshot, method=allocation_method)
+    if cost_model is None:
+        cost_model = pricing_strategy
     if favor_counter_flows:
         sn = [snapshot] if isinstance(snapshot, pd.Timestamp) else snapshot
         f_dir = (network_flow(n, sn).applymap(np.sign)
@@ -168,7 +156,8 @@ def transmission_cost(n, snapshot,
                         .reorder_levels(allocation.index.names)
 
     if normalisation == True:
-        transmission_cost = transmission_cost * cost_normalisation(transmission_cost,
-                                                                   total_transmission_cost(n, snapshot))
+        normalized = cost_normalisation(transmission_cost,
+                                        total_transmission_cost(n, snapshot))
+        transmission_cost = transmission_cost * normalized
 
     return transmission_cost.rename('transmission cost')

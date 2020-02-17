@@ -43,7 +43,7 @@ def virtual_patterns(ds, n, q=0.5):
                        virtual_injection_patterns = vip.T)
     return ds.merge(virtuals) if is_dataset else virtuals
 
-def convert_vip_to_p2p(ds):
+def vip_to_p2p(ds):
     """
     Converts a virtual injection pattern into a peer-to-peer allocation.
 
