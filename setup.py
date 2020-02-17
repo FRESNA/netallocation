@@ -11,7 +11,7 @@ setup(
     license='GPLv3',
     include_package_data=True,
     install_requires=['pypsa','pandas', 'pyyaml', 'xarray',
-                      'progressbar2', 'sparse', 'daks', 'h5py', 'scipy',
+                      'progressbar2', 'sparse', 'dask', 'h5py', 'scipy',
                       'geopandas', 'pyyaml'],
     classifiers=[
 #        'Development Status :: 3 - Alpha',
