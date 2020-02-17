@@ -5,7 +5,7 @@ This module comprises functions to convert different representations of
 allocation into each other.
 """
 import xarray as xr
-from .utils import obj_if_acc
+from .utils import obj_if_acc, upper
 from .grid import Incidence
 
 
