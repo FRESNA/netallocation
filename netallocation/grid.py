@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Mar  7 10:18:23 2019
-
-@author: fabian
+This module comprises all electricity grid relevant functions.
 """
 
 import pandas as pd
@@ -20,6 +18,24 @@ logger = logging.getLogger(__name__)
 
 
 def Incidence(n, branch_components=None, sparse=False):
+    """
+    Calculate the Incidence matrix for a given networ with given branch components.
+
+    Parameters
+    ----------
+    n : pypsa.Netowrk
+    branch_components : list, optional
+        List of branch components to be included in the Incidence matris.
+        The default is None results in n.branch_components.
+    sparse : bool, optional
+        Whether the resulting data should be sparse or not. The default is False.
+
+    Returns
+    -------
+    K : xr.DataArray
+        Incidence matrix with dimensions N (#buses) x L (#branches).
+
+    """
     if sparse:
         K = as_coo(n.incidence_matrix(branch_components))
     else:
@@ -74,6 +90,40 @@ def Cycles(n, branches_i=None):
 
 def impedance(n, branch_components=None, snapshot=None,
               pu_system=True, linear=True, skip_pre=False):
+    """
+    Calculate the impedance of the network branches.
+
+    Naturally the impdance of controllable branches is not existent. However,
+    in https://www.preprints.org/manuscript/202001.0352/v1 a method was
+    presented how to calculate the impendance of controllable branches if they
+    were passive AC lines. If 'Link' is included in branch_components,
+    the flow-dependent pseudo-impedance is calculated based on the formulation
+    presented in the paper. Note that in this case the flow must be given
+    for all branches.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    branch_components : list, optional
+        List of branch components. The default None results in
+        n.passive_branch_components.
+    snapshot : str/pd.Timestamp, optional
+        Only relevant if 'Link' in branch_components. The default None results
+        in the first snapshot of n.
+    pu_system : bool, optional
+        Whether the use the per uni system for the impendance.
+        The default is True.
+    linear : bool, optional
+        Whether to use the linear approximation. The default is True.
+    skip_pre : bool, optional
+        Whether to calcuate dependent quantities beforehand. The default is False.
+
+    Returns
+    -------
+    z : xr.DataArray
+        Impedance for each branch in branch_components.
+
+    """
     #standard impedance, note z must not be inf or nan
     x = 'x_pu' if pu_system else 'x'
     r = 'r_pu' if pu_system else 'r'
@@ -129,11 +179,16 @@ def impedance(n, branch_components=None, snapshot=None,
 
 def admittance(n, branch_components=None, snapshot=None,
                pu_system=True, linear=True):
+    """
+    Calculate the series admittance. This is the inverse of the impedance,
+    see :func:`impedance` for further information.
+    """
     y = 1/impedance(n, branch_components, snapshot, pu_system, linear)
     return y.where(~np.isinf(y), 0)
 
 
 def series_shunt_admittance(n, pu_system=True, branch_components=None):
+    "Get the series shunt admittance."
     if branch_components is None:
         branch_components = n.passive_branch_components
     g, b = ('g_pu', 'b_pu') if pu_system else ('g', 'b')
@@ -143,6 +198,10 @@ def series_shunt_admittance(n, pu_system=True, branch_components=None):
 
 
 def shunt_admittance(n, pu_system=True, branch_components=None):
+    """
+    Get the total nodal shunt admittance. This comprises all series shunt
+    admittance of adjacent branches.
+    """
     if branch_components is None:
         branch_components = n.passive_branch_components
     g, b = ('g_pu', 'b_pu') if pu_system else ('g', 'b')
@@ -156,6 +215,16 @@ def shunt_admittance(n, pu_system=True, branch_components=None):
 
 
 def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
+    """
+    Calculate the Power Tranfer Distribution Factors (PTDF)
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
+
+    If branch_components includes 'Link' the time-dependent PTDF matrix is
+    calculated on the basis of the flow-dependent pseudo-impedance (only works
+    for solved networks, see :func:`impedance`).
+    """
     if branch_components is None:
         branch_components = n.branch_components
     if 'Link' in branch_components or update or '_ptdf' not in n.__dir__():
@@ -181,11 +250,14 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     if branch_components is None:
         branch_components = n.passive_branch_components
     """
-    Calculates the Ybub matrix (or weighited Laplacian) for a given network for
-    given branch_components. If branch_component or snapshots is None, which is
-    the default, they are set to n.branch_components and n.snapshots
-    respectively. If 'Link' is included in branch_components, then their
-    weightings are derived from their current pseudo-impedance dependent on the
+    Calculate the Ybub matrix (or weighited Laplacian) for a given network for
+    given branch_components.
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
+
+    If 'Link' is included in branch_components, then their weightings are
+    derived from their current pseudo-impedance dependent on the
     current flow (see :func:`impedance`).
     """
     if branch_components is None:
@@ -215,9 +287,14 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
 def Zbus(n, branch_components=['Line'], snapshot=None,
          pu_system=True, linear=True):
     """
-    If branch_component or snapshots is None, which is
-    the default, they are set to n.branch_components and n.snapshots
-    respectively.
+    Calculate the Zbus matrix for given branch_components.
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
+
+    If branch_components includes 'Link' the time-dependent Zbus matrix is
+    calculated on the basis of the flow-dependent pseudo-impedance (only works
+    for solved networks, see :func:`impedance`).
     """
     return pinv(Ybus(n, branch_components=branch_components,
                      snapshot=snapshot,
@@ -225,6 +302,11 @@ def Zbus(n, branch_components=['Line'], snapshot=None,
 
 
 def voltage(n, snapshots=None, linear=True, pu_system=True):
+    """
+    Get the voltage at each bus of a solved network for given snapshots.
+
+    If snapshots is None (default), all n.snapshots are taken.
+    """
     if snapshots is None:
         snapshots = n.snapshots
     if linear:
@@ -248,10 +330,10 @@ def voltage(n, snapshots=None, linear=True, pu_system=True):
 def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
                  linear=True):
     """
-    Returns the flow of the network in an xarray.DataArray for given snapshots
-    and branch_components. If branch_component or snapshots is None, which is
-    the default, they are set to n.branch_components and n.snapshots
-    respectively.
+    Get the flow of the network on given branch_components for given snapshots.
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
     """
     if branch_components is None:
         branch_components = n.branch_components
@@ -276,9 +358,10 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
 
 def branch_inflow(n, snapshots=None, branch_components=None, linear=True):
     """
-    Returns the flow that goes into a branch. If branch_component or
-    snapshots is None, which is the default, they are set to n.branch_components
-    and n.snapshots respectively.
+    Calculate the flow that goes into a branch.
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
     """
     f0 = network_flow(n, snapshots, branch_components, linear=linear).T
     f1 = network_flow(n, snapshots, branch_components, False, linear).T
@@ -287,9 +370,10 @@ def branch_inflow(n, snapshots=None, branch_components=None, linear=True):
 
 def branch_outflow(n, snapshots=None, branch_components=None, linear=True):
     """
-    Returns the flow that comes out of a branch. If branch_component or
-    snapshots is None, which is the default, they are set to n.branch_components
-    and n.snapshots respectively.
+    Determine the flow that comes out of a branch.
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
     """
     f0 = network_flow(n, snapshots, branch_components, linear=linear).T
     f1 = network_flow(n, snapshots, branch_components, False, linear).T
@@ -298,8 +382,10 @@ def branch_outflow(n, snapshots=None, branch_components=None, linear=True):
 
 def network_injection(n, snapshots=None, branch_components=None, linear=True):
     """
-    Function to determine the total network injection including passive and
-    active branches.
+    Determine the total network injection including passive and active branches.
+
+    If branch_component and snapshots is None (default), they are set to
+    n.branch_components and n.snapshots respectively.
     """
     f0 = network_flow(n, snapshots, branch_components, linear=linear).T
     f1 = network_flow(n, snapshots, branch_components, False, linear).T
@@ -337,6 +423,26 @@ def _one_port_attr(n, snapshots, attr='p', comps=None):
                      .unstack('p', fill_value=0)
 
 def power_production(n, snapshots=None, per_carrier=False, update=False):
+    '''
+    Calculate the gross power production per bus and optionally carrier.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots, default None
+        If None, all snapshots are taken.
+    per_carrier : bool, optional
+        Whether to calculate the power production per bus and carrier.
+        The default is False.
+    update : bool, optional
+        Whether to recalculate cashed data. The default is False.
+
+    Returns
+    -------
+    prod : xr.DataArray
+        Power production data with dimensions snapshot, bus, carrier (optionally).
+
+    '''
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
     if not hasattr(n, 'p_plus') or update:
@@ -349,6 +455,26 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
     return prod
 
 def power_demand(n, snapshots=None, per_carrier=False, update=False):
+    '''
+    Calculate the gross power consumption per bus and optionally carrier.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots, default None
+        If None, all snapshots are taken.
+    per_carrier : bool, optional
+        Whether to calculate the power demand per bus and carrier.
+        The default is False.
+    update : bool, optional
+        Whether to recalculate cashed data. The default is False.
+
+    Returns
+    -------
+    prod : xr.DataArray
+        Power demand data with dimensions snapshot, bus, carrier (optionally).
+
+    '''
     if snapshots is None:
         snapshots = n.snapshots.rename('snapshot')
     if not hasattr(n, 'p_minus') or update:
@@ -363,7 +489,7 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
 
 def self_consumption(n, snapshots=None, update=False):
     """
-    Inspection for self consumed power, i.e. power that is not injected in the
+    Calculate the self consumed power, i.e. power that is not injected in the
     network and consumed by the bus itself
     """
     if snapshots is None:

@@ -70,7 +70,7 @@ def average_participation(n, snapshot, dims='all',
     ----------
     n : pypsa.Network
         Network object with valid flow data.
-    snapshot : str
+    snapshot : str, pd.Timestamp
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
     branch_components : list
@@ -190,7 +190,7 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     ----------
     n : pypsa.Network
         Network object with valid flow data.
-    snapshot : str
+    snapshot : str, pd.Timestamp
         Specify snapshot which should be investigated. Must be
         in network.snapshots.
     branch_components : list
@@ -549,9 +549,10 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     n : pypsa.Network
         Network object with valid flow data.
     snapshots : string or pandas.DatetimeIndex
-                (subset of) snapshots of the network
+        (Subset of) snapshots of the network. If None (dafault) all snapshots
+        are taken.
     per_bus : Boolean, default is False
-              Whether to allocate the flow in an peer-to-peeer manner,
+        Whether to allocate the flow in an peer-to-peeer manner,
     method : string
         Type of the allocation method. Should be one of
 
@@ -572,12 +573,8 @@ def flow_allocation(n, snapshots=None, method='Average participation',
 
     Returns
     -------
-    res : dict
-        The returned dict consists of two values of which the first,
-        'flow', represents the allocated flows within a mulitindexed
-        pandas.Series with levels ['snapshot', 'bus', 'line']. The
-        second object, 'cost', returns the corresponding cost derived
-        from the flow allocation.
+    res : xr.Dataset
+        Dataset with allocations depending on the method.
     """
     n.calculate_dependent_values()
     if all(c.pnl.p0.empty for c in n.iterate_components(n.branch_components)):
