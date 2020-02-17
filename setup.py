@@ -12,7 +12,7 @@ setup(
     include_package_data=True,
     install_requires=['pypsa','pandas', 'pyyaml', 'xarray',
                       'progressbar2', 'sparse', 'dask', 'h5py', 'scipy',
-                      'geopandas', 'pyyaml'],
+                      'geopandas', 'pyyaml', 'cartopy'],
     classifiers=[
 #        'Development Status :: 3 - Alpha',
         'Environment :: Console',

@@ -14,3 +14,4 @@ dependencies:
   - pyyaml
   - geopandas
   - pandas
+  - cartopy
