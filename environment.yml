@@ -3,15 +3,18 @@ channels:
   - conda-forge
 dependencies:
   - python
-  - xarray
-  - progressbar2
-  - pypsa
-  - sparse
-  - dask
-  - pathlib
-  - h5py
-  - scipy
-  - pyyaml
-  - geopandas
-  - pandas
-  - cartopy
+  - pip
+  pip:
+    - netallocation
+  # - xarray
+  # - progressbar2
+  # - pypsa
+  # - sparse
+  # - dask
+  # - pathlib
+  # - h5py
+  # - scipy
+  # - pyyaml
+  # - geopandas
+  # - pandas
+  # - cartopy
