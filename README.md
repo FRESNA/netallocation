@@ -1,8 +1,8 @@
 # netallocation 
 
-![Documentation Status](https://readthedocs.org/projects/netallocation/badge/?version=latest)
-![PyPI](https://img.shields.io/pypi/v/netallocation) 
-![Python application](https://github.com/FRESNA/netallocation/workflows/Python%20application/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/netallocation/badge/?version=latest)](https://netallocation.readthedocs.io/en/latest/)
+[![PyPI](https://img.shields.io/pypi/v/netallocation)](https://pypi.org/project/netallocation/) 
+[![Python application](https://github.com/FRESNA/netallocation/workflows/Python%20application/badge.svg)](https://github.com/FRESNA/netallocation/actions/)
 ![Python Version](https://img.shields.io/badge/python-3.5%20%7C%203.6%20%7C%203.7-blue)
 ![license](https://img.shields.io/pypi/l/netallocation)
 
