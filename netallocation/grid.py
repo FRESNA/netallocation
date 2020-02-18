@@ -10,6 +10,8 @@ from xarray import DataArray
 import numpy as np
 from .linalg import pinv, diag, null, dot
 from .utils import get_branches_i, group_per_bus_carrier
+from .decorators import (check_snapshots, check_branch_components,
+                         check_passive_branch_components)
 from sparse import as_coo
 import logging
 import networkx as nx
@@ -87,7 +89,7 @@ def Cycles(n, branches_i=None):
     return DataArray(C.todense(),  {'branch': branches_i, 'cycle': range(C.shape[1])},
                     ('branch', 'cycle'))
 
-
+@check_passive_branch_components
 def impedance(n, branch_components=None, snapshot=None,
               pu_system=True, linear=True, skip_pre=False):
     """
@@ -132,8 +134,6 @@ def impedance(n, branch_components=None, snapshot=None,
         if pu_system and (n.lines[x] == 0).all():
             n.calculate_dependent_values()
 
-    if branch_components is None:
-        branch_components = n.passive_branch_components
     comps = sorted(set(branch_components) & n.passive_branch_components)
     if linear:
         z = pd.concat([n.df(c)[x].where(n.df(c).bus0.map(n.buses.carrier) == 'AC',
@@ -213,7 +213,7 @@ def shunt_admittance(n, pu_system=True, branch_components=None):
     nodal_shunt = DataArray(nodal_shunt, dims='bus')
     return 0.5 * abs(K) @ series_shunt + nodal_shunt
 
-
+@check_branch_components
 def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
     """
     Calculate the Power Tranfer Distribution Factors (PTDF)
@@ -225,8 +225,6 @@ def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
     calculated on the basis of the flow-dependent pseudo-impedance (only works
     for solved networks, see :func:`impedance`).
     """
-    if branch_components is None:
-        branch_components = n.branch_components
     if 'Link' in branch_components or update or '_ptdf' not in n.__dir__():
         n.calculate_dependent_values()
         K = Incidence(n, branch_components)
@@ -237,15 +235,15 @@ def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
     return n._ptdf
 
 
-
-def CISF(n, branch_components=['Line', 'Transformer'], pu_system=True):
+@check_passive_branch_components
+def CISF(n, branch_components=None, pu_system=True):
     n.calculate_dependent_values(), n.determine_network_topology()
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, pu_system=pu_system, linear=False)
     Z = Zbus(n, branch_components, pu_system=pu_system, linear=False)
     return diag(y) @ K.T @ Z
 
-
+@check_passive_branch_components
 def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     if branch_components is None:
         branch_components = n.passive_branch_components
@@ -260,8 +258,6 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     derived from their current pseudo-impedance dependent on the
     current flow (see :func:`impedance`).
     """
-    if branch_components is None:
-        branch_components = n.passive_branch_components
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, snapshot, pu_system=pu_system,
                    linear=linear)
@@ -283,8 +279,7 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
         return n.sub_networks.obj.apply(get_Ybus)
 
 
-
-def Zbus(n, branch_components=['Line'], snapshot=None,
+def Zbus(n, branch_components=None, snapshot=None,
          pu_system=True, linear=True):
     """
     Calculate the Zbus matrix for given branch_components.
@@ -300,15 +295,13 @@ def Zbus(n, branch_components=['Line'], snapshot=None,
                      snapshot=snapshot,
                      pu_system=pu_system, linear=linear))
 
-
+@check_snapshots
 def voltage(n, snapshots=None, linear=True, pu_system=True):
     """
     Get the voltage at each bus of a solved network for given snapshots.
 
     If snapshots is None (default), all n.snapshots are taken.
     """
-    if snapshots is None:
-        snapshots = n.snapshots
     if linear:
         v = n.buses_t.v_ang.loc[snapshots] + 1
 #        v = np.exp(- 1.j * n.buses_t.v_ang).T[snapshots]
@@ -325,8 +318,7 @@ def voltage(n, snapshots=None, linear=True, pu_system=True):
                 .assign_coords(snapshot=snapshots)
 
 
-
-
+@check_snapshots
 def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
                  linear=True):
     """
@@ -338,7 +330,6 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
     if branch_components is None:
         branch_components = n.branch_components
     comps = sorted(branch_components)
-    snapshots = n.snapshots if snapshots is None else snapshots
     p = 'p0' if ingoing else 'p1'
     axis = int(isinstance(snapshots, (list, pd.Index)))
     f = pd.concat([n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps],
@@ -393,7 +384,8 @@ def network_injection(n, snapshots=None, branch_components=None, linear=True):
     return (K.clip(min=0) @ f0 - K.clip(max=0) @ f1).T
 
 
-def _one_port_attr(n, snapshots, attr='p', comps=None):
+@check_snapshots
+def _one_port_attr(n, snapshots=None, attr='p', comps=None):
     """
     Retrieve a time-dependent attribute for given component, grouped by bus
     and carrier.
@@ -422,8 +414,9 @@ def _one_port_attr(n, snapshots, attr='p', comps=None):
                         for c in comps), axis=1), dims=['snapshot', 'p'])\
                      .unstack('p', fill_value=0)
 
+@check_snapshots
 def power_production(n, snapshots=None, per_carrier=False, update=False):
-    '''
+    """
     Calculate the gross power production per bus and optionally carrier.
 
     Parameters
@@ -442,9 +435,7 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
     prod : xr.DataArray
         Power production data with dimensions snapshot, bus, carrier (optionally).
 
-    '''
-    if snapshots is None:
-        snapshots = n.snapshots.rename('snapshot')
+    """
     if not hasattr(n, 'p_plus') or update:
         prod = _one_port_attr(n, n.snapshots)
         n.buses_t['p_plus'] = prod.sel(carrier=(prod>=0).any(['snapshot', 'bus']))\
@@ -454,8 +445,9 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
         prod = prod.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return prod
 
+@check_snapshots
 def power_demand(n, snapshots=None, per_carrier=False, update=False):
-    '''
+    """
     Calculate the gross power consumption per bus and optionally carrier.
 
     Parameters
@@ -474,9 +466,7 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
     prod : xr.DataArray
         Power demand data with dimensions snapshot, bus, carrier (optionally).
 
-    '''
-    if snapshots is None:
-        snapshots = n.snapshots.rename('snapshot')
+    """
     if not hasattr(n, 'p_minus') or update:
         demand = _one_port_attr(n, n.snapshots)
         n.buses_t['p_minus'] = (- demand).sel(carrier=(demand<=0)
@@ -486,14 +476,12 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
         demand = demand.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return demand
 
-
+@check_snapshots
 def self_consumption(n, snapshots=None, update=False):
     """
     Calculate the self consumed power, i.e. power that is not injected in the
     network and consumed by the bus itself
     """
-    if snapshots is None:
-        snapshots = n.snapshots.rename('snapshot')
     if 'p_self' not in n.buses_t or update:
         n.buses_t.p_self = (xr.concat(
             [power_production(n, n.snapshots), power_demand(n, n.snapshots)], 'bus')

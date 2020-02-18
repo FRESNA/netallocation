@@ -14,7 +14,7 @@ from .grid import (self_consumption, power_demand, power_production,
                         PTDF, CISF, voltage, Ybus)
 from .linalg import diag, inv, dedup_axis
 from .utils import upper, lower, as_sparse
-
+from .decorators import check_passive_branch_components, check_snapshots
 import pandas as pd
 import xarray as xr
 from xarray import Dataset, DataArray
@@ -207,14 +207,6 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     """
     snapshot = n.snapshots[0] if snapshot is None else snapshot
     H = PTDF(n, branch_components=branch_components, snapshot=snapshot)
-    # old code:
-        # f = network_flow(n, snapshot, branch_components)
-        # p = K @ f
-        # p_plus = upper(p)
-        # # unbalanced flow from positive injection:
-        # f_plus = H @ p_plus
-        # k_plus = (q * f - f_plus) / p_plus.sum()
-        # F = (H + k_plus) * p
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
     p = K @ f
@@ -289,7 +281,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     return as_sparse(res) if sparse else res
 
 
-
+@check_passive_branch_components
 def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
                       branch_components=None):
     r"""
@@ -318,8 +310,6 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
     """
     n.calculate_dependent_values()
     snapshot = n.snapshots[0] if snapshot is None else snapshot
-    if branch_components is None:
-        branch_components = n.passive_branch_components
     assert 'Link' not in branch_components, ('Component "Link" cannot be '
                 'considered in Zbus flow allocation.')
 
@@ -351,7 +341,8 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
                   attrs={'method': 'Zbus flow allocation'})
 
 
-
+@check_passive_branch_components
+@check_snapshots
 def with_and_without_transit(n, snapshots=None, branch_components=None):
     """
     Compute the with-and-without flows and losses.
@@ -384,11 +375,6 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
 
     """
     regions = pd.Index(n.buses.country.unique(), name='country')
-    if branch_components is None:
-        branch_components = n.passive_branch_components
-    branch_components = list(branch_components)
-    if snapshots is None:
-        snapshots = n.snapshots.rename('snasphot')
     branches = n.branches().loc[branch_components]
     f = network_flow(n, snapshots, branch_components)
 
@@ -449,7 +435,7 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
     return flows.merge(loss).assign_attrs(method='With-and-Without-Transit').fillna(0)
 
 
-
+@check_snapshots
 def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
                                   return_networks=False):
     import pyomo.environ as pe
@@ -470,8 +456,6 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
         return ((revenue - cost).rename_axis('profit')
                 .rename_axis('generator', axis=1))
 
-    if snapshots is None:
-        snapshots = n.snapshots
     n.lopf(snapshots, solver_name='gurobi_persistent', formulation=formulation)
     m = n.model
 
@@ -532,7 +516,7 @@ _func_dict = {'Average participation': average_participation,
              'zbus': zbus_transmission}
 _non_sequential_funcs = [zbus_transmission, with_and_without_transit]
 
-
+@check_snapshots
 def flow_allocation(n, snapshots=None, method='Average participation',
                     round_floats=8, **kwargs):
     """
@@ -589,9 +573,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     if isinstance(snapshots, (str, pd.Timestamp)) or is_nonsequetial_func:
         return _func_dict[method](n, snapshots, **kwargs)
 
-    snapshots = n.snapshots if snapshots is None else snapshots
     pbar = ProgressBar()
-
     func = lambda sn: _func_dict[method](n, sn, **kwargs)
     res = xr.concat((func(sn) for sn in pbar(snapshots)),
                     dim=snapshots.rename('snapshot'))

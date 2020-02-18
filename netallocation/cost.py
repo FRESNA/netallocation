@@ -5,6 +5,7 @@ from xarray import DataArray, Dataset
 
 from .flow import flow_allocation, network_flow
 from .utils import group_per_bus_carrier
+from .decorators import check_snapshots, check_store_carrier
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
 from .grid import power_production, power_demand
@@ -22,14 +23,30 @@ from .grid import power_production, power_demand
 # revenue.sum() - expenses.sum() - tso_profit.sum()
 
 
-def p2p_allocated_sink_costs(n, ds, snapshots=None):
-    if snapshots is None:
-        snapshots = n.snapshots
+@check_snapshots
+@check_store_carrier
+def generation_cost_from_p2p(n, ds, snapshots=None):
+    """
+    Allocate the production cost on the basis of a peer-to-peer allocation.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    ds : str/xarray.Dataset
+        Allocation method, e.g. 'ap' or already calculated power allocation
+        dataset, i.e. from ntl.allocate_flow.
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    Returns
+    -------
+    xr.DataArray
+        Allocated generation cost.
+
+    """
     if isinstance(ds, str):
         ds = flow_allocation(n, snapshots, ds)
     ds = expand_by_source_type(ds, n)
-    if 'carrier' not in n.stores:
-        n.stores['carrier'] = n.stores.bus.map(n.buses.carrier)
     comps = ['Generator', 'StorageUnit', 'Store']
     prodcost_pu = DataArray(pd.concat(
             (group_per_bus_carrier(get_as_dense(n, c, 'marginal_cost', snapshots), c, n)
@@ -49,6 +66,33 @@ def p2p_allocated_sink_costs(n, ds, snapshots=None):
 
     return Dataset({'from_allocation': cost_per_sink_alloc,
                     'from_shadow_price': cost_per_sink_opt})
+
+
+@check_snapshots
+@check_store_carrier
+def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
+    """
+    Allocate an carrier attribute on the basis of a peer-to-peer allocation.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    ds : str/xarray.Dataset
+        Allocation method, e.g. 'ap' or already calculated power allocation
+        dataset, i.e. from ntl.allocate_flow.
+    attr : str/pd.Series/pd.DataFrame
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    Returns
+    -------
+    xr.DataArray
+
+    """
+    if isinstance(ds, str):
+        ds = flow_allocation(n, snapshots, ds)
+    ds = expand_by_source_type(ds, n)
+    return DataArray(n.carriers[attr], dims='source_carrier') * ds
 
 
 
