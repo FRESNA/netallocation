@@ -1,5 +1,11 @@
 # netallocation 
 
+![Documentation Status](https://readthedocs.org/projects/netallocation/badge/?version=latest)
+![PyPI](https://img.shields.io/pypi/v/netallocation) 
+![Python application](https://github.com/FRESNA/netallocation/workflows/Python%20application/badge.svg)
+![Python Version](https://img.shields.io/badge/python-3.5%20%7C%203.6%20%7C%203.7-blue)
+![license](https://img.shields.io/pypi/l/netallocation)
+
 A toolset for allocating flows and costs in [PyPSA](https://www.github.com/PyPSA/PyPSA) power systems. This package provides various functions to allocate costs among partcipants in a power network. Based on different allocation schemes, functions allow to allocate flows, losses and transmission costs in a transparent way.   
 
 
