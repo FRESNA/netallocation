@@ -8,14 +8,17 @@ Created on Wed Dec 11 17:51:53 2019
 
 import pypsa
 import os
+from pathlib import Path
+
+modulepath = Path(__file__).parent
 
 def get_network_ac_dc():
-    return pypsa.Network(os.path.join(__file__, '..', '..', 'test', 'networks','test.nc'))
+    return pypsa.Network(str(modulepath.joinpath('networks','test.h5')))
 
 
 def get_network_pure_dc_link():
-    return pypsa.Network(os.path.join(__file__, '..', '..', 'test', 'networks','simple_dc_model.nc'))
+    return pypsa.Network(str(modulepath.joinpath('networks','simple_dc_model.h5')))
 
 def get_network_large():
-    return pypsa.Network(os.path.join(__file__, '..', '..', 'test', 'networks', 'european_model.nc'))
+    return pypsa.Network(str(modulepath.joinpath('networks', 'european_model.h5')))
 

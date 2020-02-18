@@ -1,2 +1,6 @@
 netallocation/__pycache__
 benchmark.py
+doc/_build/
+build/
+dist/
+netallocation.egg-info/

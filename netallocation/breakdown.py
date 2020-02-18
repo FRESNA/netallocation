@@ -24,7 +24,7 @@ def expand_by_source_type(ds, n, chunksize=None):
     These include carriers of all components specified by 'components'.
     Note that carrier names of all components have to be unique.
 
-    Parameter
+    Parameters
     ----------
     ds : xarray.Dataset
         Allocation Data with dimension 'source'
@@ -74,7 +74,7 @@ def expand_by_sink_type(ds, n, chunksize=None):
     These include carriers of all components specified by 'components'. Note
     that carrier names of all components have to be unique.
 
-    Parameter
+    Parameters
     ----------
     ds : xarray.Dataset
         Allocation Data with dimension 'sink'

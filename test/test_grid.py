@@ -24,6 +24,7 @@ n_large = ntl.test.get_network_large()
 
 tol_kwargs = dict(atol=1e-5, rtol=1)
 
+
 def test_injection():
     comps = n.passive_branch_components
     np_assert_allclose(network_injection(n, branch_components=comps).values,

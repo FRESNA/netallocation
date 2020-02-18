@@ -18,9 +18,9 @@ def virtual_patterns(ds, n, q=0.5):
     Parameters
     -----------
     ds : xarray.Dataset or xarray.DataArray
-    n: pypsa.Network
+    n : pypsa.Network
         Underlying network. This is needed for determining the Incidence matrix.
-    q: float in [0,1]
+    q : float in [0,1]
         Ratio of net source and net sink contributions in the virtual patterns.
         If q=0 then only net importers are taken into account (if q=1 only
         net exporters).

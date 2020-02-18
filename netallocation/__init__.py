@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Mar  7 10:16:50 2019
+This is the netallocation package.
 
-@author: fabian
+It package provides various functions to allocate flow in a pypsa power
+system. Underlying packages are xarray and dask.
+
 """
 
 from .flow import flow_allocation as allocate_flow
