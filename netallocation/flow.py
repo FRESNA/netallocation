@@ -13,8 +13,8 @@ from .grid import (self_consumption, power_demand, power_production,
                         network_injection, network_flow, Incidence,
                         PTDF, CISF, voltage, Ybus)
 from .linalg import diag, inv, dedup_axis
-from .utils import upper, lower, as_sparse
-from .decorators import check_passive_branch_components, check_snapshots
+from .utils import (upper, lower, as_sparse, check_branch_comps,
+                    check_passive_branch_comps, check_snapshots)
 import pandas as pd
 import xarray as xr
 from xarray import Dataset, DataArray
@@ -281,7 +281,6 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     return as_sparse(res) if sparse else res
 
 
-@check_passive_branch_components
 def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
                       branch_components=None):
     r"""
@@ -309,6 +308,7 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
 
     """
     n.calculate_dependent_values()
+    branch_components = check_passive_branch_comps(branch_components, n)
     snapshot = n.snapshots[0] if snapshot is None else snapshot
     assert 'Link' not in branch_components, ('Component "Link" cannot be '
                 'considered in Zbus flow allocation.')
@@ -341,8 +341,6 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
                   attrs={'method': 'Zbus flow allocation'})
 
 
-@check_passive_branch_components
-@check_snapshots
 def with_and_without_transit(n, snapshots=None, branch_components=None):
     """
     Compute the with-and-without flows and losses.
@@ -374,6 +372,8 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
         variables [flow_with, loss_with, flow_without, loss_without].
 
     """
+    branch_components = check_passive_branch_comps(branch_components, n)
+    snapshots = check_snapshots(snapshots, n)
     regions = pd.Index(n.buses.country.unique(), name='country')
     branches = n.branches().loc[branch_components]
     f = network_flow(n, snapshots, branch_components)
@@ -435,7 +435,6 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
     return flows.merge(loss).assign_attrs(method='With-and-Without-Transit').fillna(0)
 
 
-@check_snapshots
 def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
                                   return_networks=False):
     import pyomo.environ as pe
@@ -456,6 +455,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
         return ((revenue - cost).rename_axis('profit')
                 .rename_axis('generator', axis=1))
 
+    snapshots = check_snapshots(snapshots, n)
     n.lopf(snapshots, solver_name='gurobi_persistent', formulation=formulation)
     m = n.model
 
@@ -516,7 +516,6 @@ _func_dict = {'Average participation': average_participation,
              'zbus': zbus_transmission}
 _non_sequential_funcs = [zbus_transmission, with_and_without_transit]
 
-@check_snapshots
 def flow_allocation(n, snapshots=None, method='Average participation',
                     round_floats=8, **kwargs):
     """
@@ -560,6 +559,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     res : xr.Dataset
         Dataset with allocations depending on the method.
     """
+    snapshots = check_snapshots(snapshots, n)
     n.calculate_dependent_values()
     if all(c.pnl.p0.empty for c in n.iterate_components(n.branch_components)):
         raise ValueError('Flows are not given by the network, '

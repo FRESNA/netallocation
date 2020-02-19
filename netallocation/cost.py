@@ -4,8 +4,7 @@ from pypsa.descriptors import get_switchable_as_dense as get_as_dense
 from xarray import DataArray, Dataset
 
 from .flow import flow_allocation, network_flow
-from .utils import group_per_bus_carrier
-from .decorators import check_snapshots, check_store_carrier
+from .utils import group_per_bus_carrier, check_store_carrier, check_snapshots
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
 from .grid import power_production, power_demand
@@ -23,8 +22,6 @@ from .grid import power_production, power_demand
 # revenue.sum() - expenses.sum() - tso_profit.sum()
 
 
-@check_snapshots
-@check_store_carrier
 def generation_cost_from_p2p(n, ds, snapshots=None):
     """
     Allocate the production cost on the basis of a peer-to-peer allocation.
@@ -46,6 +43,8 @@ def generation_cost_from_p2p(n, ds, snapshots=None):
     """
     if isinstance(ds, str):
         ds = flow_allocation(n, snapshots, ds)
+    snapshots = check_snapshots(snapshots, n)
+    check_store_carrier(n)
     ds = expand_by_source_type(ds, n)
     comps = ['Generator', 'StorageUnit', 'Store']
     prodcost_pu = DataArray(pd.concat(
@@ -68,8 +67,6 @@ def generation_cost_from_p2p(n, ds, snapshots=None):
                     'from_shadow_price': cost_per_sink_opt})
 
 
-@check_snapshots
-@check_store_carrier
 def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
     """
     Allocate an carrier attribute on the basis of a peer-to-peer allocation.
@@ -89,8 +86,10 @@ def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
     xr.DataArray
 
     """
+    snapshots = check_snapshots(snapshots, n)
     if isinstance(ds, str):
         ds = flow_allocation(n, snapshots, ds)
+    check_store_carrier(n)
     ds = expand_by_source_type(ds, n)
     return DataArray(n.carriers[attr], dims='source_carrier') * ds
 

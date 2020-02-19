@@ -4,3 +4,4 @@ doc/_build/
 build/
 dist/
 netallocation.egg-info/
+.vscode

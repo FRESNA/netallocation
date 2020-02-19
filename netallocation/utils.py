@@ -9,7 +9,6 @@ import pandas as pd
 import xarray as xr
 from pypsa.geo import haversine_pts
 from sparse import as_coo, COO
-from .decorators import check_branch_components
 
 def upper(ds):
     "Clip all negative entries of a xr.Dataset/xr.DataArray."
@@ -21,9 +20,9 @@ def lower(ds):
     ds = obj_if_acc(ds)
     return ds.clip(max=0)
 
-@check_branch_components
 def get_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all branches in the Network."
+    branch_components = check_branch_comps(branch_components, n)
     return pd.concat((n.df(c)[[]] for c in branch_components),
            keys=branch_components).index.rename(['component', 'branch_i'])
 
@@ -165,3 +164,33 @@ def group_per_bus_carrier(df, c, n):
     df = df.groupby(n.df(c)[['bus', 'carrier']].apply(tuple, axis=1), axis=1).sum()
     df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
     return df
+
+
+def check_store_carrier(n):
+    """
+    Ensure if carrier of stores is defined.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+
+    """
+    if 'carrier' not in n.stores:
+        n.stores['carrier'] = n.stores.bus.map(n.buses.carrier)
+
+
+def check_snapshots(arg, n):
+    return n.snapshots.rename('snapshot') if arg is None else arg
+
+def set_default_if_none(arg, n, attr):
+    return getattr(n, attr) if arg is None else arg
+
+def check_passive_branch_comps(arg, n):
+    return set_default_if_none(arg, n, 'passive_branch_components')
+
+def check_branch_comps(arg, n):
+    return set_default_if_none(arg, n, 'branch_components')
+
+def check_one_port_comps(arg, n):
+    return set_default_if_none(arg, n, 'one_port_components')
+

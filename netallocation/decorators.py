@@ -51,6 +51,7 @@ def check_branch_components(func):
         return func(*(), **kwargs)
     return func_wrapper
 
+
 def check_passive_branch_components(func):
     """
     Decorator to set branch_component to n.passive_branch_components if None.
@@ -72,28 +73,5 @@ def check_passive_branch_components(func):
                    kwargs['branch_components'] = kwargs['n'].passive_branch_components
         return func(**kwargs)
     return func_wrapper
-
-
-def check_store_carrier(func):
-    """
-    Decorator to define carrier of stores in a network if undefined.
-
-    Parameters
-    ----------
-    func : function
-        Function with network as an (positional) argument (name 'n').
-
-    """
-    argnames = func.__code__.co_varnames
-    @wraps(func)
-    def func_wrapper(*args, **kwargs):
-        # Convert args to keyword arguments
-        for i, arg in enumerate(args):
-            kwargs[argnames[i]] = arg
-        n = kwargs['n']
-        if 'carrier' not in n.stores:
-            n.stores['carrier'] = n.stores.bus.map(n.buses.carrier)
-    return func_wrapper
-
 
 

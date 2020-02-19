@@ -24,16 +24,6 @@ n_large = ntl.test.get_network_large()
 
 tol_kwargs = dict(atol=1e-5, rtol=1)
 
-@ntl.decorators.check_snapshots
-def get_snapshots(n, snapshots=None):
-    return snapshots
-
-def test_decorator():
-    assert all(n.snapshots == get_snapshots(n, None))
-    assert all(n.snapshots == get_snapshots(n, snapshots=None))
-    assert all(n.snapshots == get_snapshots(n=n, snapshots=None))
-    assert all(n.snapshots == get_snapshots(n, n.snapshots))
-
 
 def test_injection():
     comps = n.passive_branch_components
