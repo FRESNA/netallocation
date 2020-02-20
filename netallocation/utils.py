@@ -143,7 +143,7 @@ def bus_distances(n):
     return xr.DataArray(d, dims=['source', 'sink'])
 
 
-def group_per_bus_carrier(df, c, n):
+def reindex_by_bus_carrier(df, c, n):
     """
     Group a time-dependent dataframe by bus and carrier.
 
@@ -157,16 +157,28 @@ def group_per_bus_carrier(df, c, n):
 
     Returns
     -------
-    df : pd.DataFrame
-        Grouped dataframe with Multiindex ('bus', 'carrier').
+    xarray.DataArray
+        Grouped array with dimension ('snapshot', 'bus', 'carrier').
 
     """
-    df = df.groupby(n.df(c)[['bus', 'carrier']].apply(tuple, axis=1), axis=1).sum()
+    check_duplicated_carrier(n)
+    df = df.rename(columns=n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
     df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
-    return df
+    return xr.DataArray(df).unstack('dim_1', fill_value=0)
 
 
-def check_store_carrier(n):
+def check_duplicated_carrier(n):
+    check_carriers(n)
+    dupl = pd.Series({c: n.df(c).carrier.unique() for c in n.one_port_components
+                      if 'carrier' in n.df(c)}).explode()\
+                      [lambda ds: ds.duplicated(keep=False)].dropna()
+    assert dupl.empty, (f'The carrier name(s) {dupl.to_list()} appear in more '
+                        f'than one component {dupl.index}. This will not work '
+                        'when spanning the bus x carrier dimensions. Please '
+                        'ensure unique carrier names.')
+
+
+def check_carriers(n):
     """
     Ensure if carrier of stores is defined.
 
@@ -175,22 +187,40 @@ def check_store_carrier(n):
     n : pypsa.Network
 
     """
+    if 'carrier' not in n.loads:
+        n.loads['carrier'] = 'Load'
     if 'carrier' not in n.stores:
         n.stores['carrier'] = n.stores.bus.map(n.buses.carrier)
 
-
 def check_snapshots(arg, n):
+    """
+    Set argument to n.snapshots if None
+    """
+    if isinstance(arg, pd.Index):
+        return arg.rename('snapshot')
     return n.snapshots.rename('snapshot') if arg is None else arg
 
 def set_default_if_none(arg, n, attr):
+    """
+    Set any argument to an attribute of n if None
+    """
     return getattr(n, attr) if arg is None else arg
 
 def check_passive_branch_comps(arg, n):
+    """
+    Set argument to n.passive_branch_components if None
+    """
     return set_default_if_none(arg, n, 'passive_branch_components')
 
 def check_branch_comps(arg, n):
+    """
+    Set argument to n.branch_components if None
+    """
     return set_default_if_none(arg, n, 'branch_components')
 
 def check_one_port_comps(arg, n):
+    """
+    Set argument to n.one_port_components if None
+    """
     return set_default_if_none(arg, n, 'one_port_components')
 

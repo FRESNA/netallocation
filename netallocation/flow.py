@@ -573,7 +573,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     if isinstance(snapshots, (str, pd.Timestamp)) or is_nonsequetial_func:
         return _func_dict[method](n, snapshots, **kwargs)
 
-    pbar = ProgressBar()
+    pbar = ProgressBar(prefix='Calculate allocations')
     func = lambda sn: _func_dict[method](n, sn, **kwargs)
     res = xr.concat((func(sn) for sn in pbar(snapshots)),
                     dim=snapshots.rename('snapshot'))

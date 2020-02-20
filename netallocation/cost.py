@@ -1,13 +1,13 @@
 import numpy as np
 import pandas as pd
 from pypsa.descriptors import get_switchable_as_dense as get_as_dense
-from xarray import DataArray, Dataset
+from xarray import DataArray, Dataset, concat
 
 from .flow import flow_allocation, network_flow
-from .utils import group_per_bus_carrier, check_store_carrier, check_snapshots
+from .utils import reindex_by_bus_carrier, check_carriers, check_snapshots
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
-from .grid import power_production, power_demand
+from .grid import power_production, power_demand, Incidence
 
 # ma = n.buses_t.marginal_price.loc[sns].T
 # K = ntl.Incidence(n)
@@ -22,7 +22,7 @@ from .grid import power_production, power_demand
 # revenue.sum() - expenses.sum() - tso_profit.sum()
 
 
-def generation_cost_from_p2p(n, ds, snapshots=None):
+def weight_with_generation_cost(n, ds, snapshots=None):
     """
     Allocate the production cost on the basis of a peer-to-peer allocation.
 
@@ -44,27 +44,46 @@ def generation_cost_from_p2p(n, ds, snapshots=None):
     if isinstance(ds, str):
         ds = flow_allocation(n, snapshots, ds)
     snapshots = check_snapshots(snapshots, n)
-    check_store_carrier(n)
+    check_carriers(n)
     ds = expand_by_source_type(ds, n)
     comps = ['Generator', 'StorageUnit', 'Store']
-    prodcost_pu = DataArray(pd.concat(
-            (group_per_bus_carrier(get_as_dense(n, c, 'marginal_cost', snapshots), c, n)
-             for c in comps), axis=1), dims=['snapshot', 'marginal_cost'])\
-            .unstack('marginal_cost', fill_value=0)\
-            .rename(bus='source', carrier='source_carrier')
+    gen = (reindex_by_bus_carrier(get_as_dense(n, c, 'marginal_cost', snapshots),
+                                  c, n) for c in comps)
+    prodcost_pu = concat(gen, dim='carrier')\
+                  .rename(bus='source', carrier='source_carrier')
+    return prodcost_pu * ds
+
+
+def weight_with_branch_cost(n, ds, snapshots=None):
+    """
+    Allocate the branch cost on the basis of an allocation method.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    ds : str/xarray.Dataset
+        Allocation method, e.g. 'ap' or already calculated power allocation
+        dataset, i.e. from ntl.allocate_flow.
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    Returns
+    -------
+    xr.DataArray
+        Allocated branch cost.
+
+    """
+    if isinstance(ds, str):
+        ds = flow_allocation(n, snapshots, ds)
+    snapshots = check_snapshots(snapshots, n)
+    check_carriers(n)
+    ds = expand_by_source_type(ds, n)
 
     branchcost_pu = pd.concat([get_as_dense(n, 'Link', 'marginal_cost', snapshots)],
                               keys=['Link'], axis=1, names=['component', 'branch_i'])\
                         .loc[:, lambda df: (df > 0).any()]
-    branchcost_pu = DataArray(branchcost_pu).unstack('dim_1')
-
-    cost_per_sink_alloc = (prodcost_pu * ds).sum(['source', 'source_carrier']).peer_to_peer
-
-    marg_price = DataArray(n.buses_t.marginal_price, dims=['snapshot', 'sink'])
-    cost_per_sink_opt = power_demand(n, snapshots).rename(bus='sink') * marg_price
-
-    return Dataset({'from_allocation': cost_per_sink_alloc,
-                    'from_shadow_price': cost_per_sink_opt})
+    branchcost_pu = DataArray(branchcost_pu, dims='branch')
+    return branchcost_pu * ds
 
 
 def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
@@ -89,11 +108,95 @@ def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
     snapshots = check_snapshots(snapshots, n)
     if isinstance(ds, str):
         ds = flow_allocation(n, snapshots, ds)
-    check_store_carrier(n)
+    check_carriers(n)
     ds = expand_by_source_type(ds, n)
     return DataArray(n.carriers[attr], dims='source_carrier') * ds
 
 
+def locational_market_price(n, snapshots=None, per_energy=False):
+    """
+    Get the locational market price (LMP) of 1 MWh in a solved network.
+
+    If per_energy is set to True, the marginal price are mutliplied by
+    n.snapshot_weightings, thus it reflects the price of 1 MW produced for
+    elapsed time.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+    per_energy : bool, optional
+        See above. The default is False.
+
+    Returns
+    -------
+    ma : xr.DataArray
+        Marginal Price for dimensions {bus, snapshot}.
+
+    """
+    snapshots = check_snapshots(snapshots, n)
+    ma = DataArray(n.buses_t.marginal_price.loc[snapshots], dims=['snapshot', 'bus'])
+    if per_energy:
+        ma *= DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+    return ma
+
+
+def locational_market_price_diff(n, snapshots=None):
+    return - Incidence(n) @ locational_market_price(n, snapshots)
+
+
+def congestion_revenue(n, snapshots=None):
+    return locational_market_price_diff(n, snapshots) * network_flow(n, snapshots)
+
+
+def nodal_demand_cost(n, snapshots=None, per_energy=False):
+    """
+    Calculate the nodal demand cost per bus and snapshot.
+
+    This is calculated by the product of power demand times the marginal price.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    """
+    snapshots = check_snapshots(snapshots, n)
+    return power_demand(n, snapshots) * \
+           locational_market_price(n, snapshots, per_energy)
+
+
+def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
+                   co2_constr_name='co2_limit'):
+    c = 'Generator'
+    em = n.pnl(c).p / n.df(c).efficiency * n.df(c).carrier.map(n.carriers[co2_attr])
+    return DataArray(n.global_constraints.mu[co2_constr_name] * em)
+
+
+def nodal_production_revenue(n, snapshots=None, per_energy=False):
+    """
+    Calculate the nodal production revenue per bus and snapshot.
+
+    This is calculated by the product of power production times the marginal
+    price.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    """
+    snapshots = check_snapshots(snapshots, n)
+    return power_production(n, snapshots) * \
+           locational_market_price(n, snapshots, per_energy)
+
+
+
+# Total Production Revenue + Total Congetion Renvenue = Total Demand Cost
+# (nodal_production_revenue(n).sum() + congestion_revenue(n).sum())/ nodal_demand_cost(n).sum() == 1
 
 # Network Meta Data
 # km

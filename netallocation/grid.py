@@ -9,7 +9,7 @@ import xarray as xr
 from xarray import DataArray
 import numpy as np
 from .linalg import pinv, diag, null, dot
-from .utils import (get_branches_i, group_per_bus_carrier, check_branch_comps,
+from .utils import (get_branches_i, reindex_by_bus_carrier, check_branch_comps,
                     check_snapshots, check_passive_branch_comps)
 from sparse import as_coo
 import logging
@@ -380,7 +380,7 @@ def network_injection(n, snapshots=None, branch_components=None, linear=True):
 
 def _one_port_attr(n, snapshots=None, attr='p', comps=None):
     """
-    Retrieve a time-dependent attribute for given component, grouped by bus
+    Retrieve a time-dependent attribute for given component, indexed by bus
     and carrier.
 
     Parameters
@@ -394,19 +394,14 @@ def _one_port_attr(n, snapshots=None, attr='p', comps=None):
     Returns
     -------
     xr.DataArray
-        Grouped attribute.
 
     """
     snapshots = check_snapshots(snapshots, n)
     if comps is None:
         comps = [c for c in sorted(n.one_port_components) if not n.df(c).empty]
-    if 'carrier' not in n.loads:
-        n.loads['carrier'] = 'Load'
-
-    return xr.DataArray(pd.concat((group_per_bus_carrier(
-                        n.pnl(c)[attr].loc[snapshots] * n.df(c).sign, c, n)
-                        for c in comps), axis=1), dims=['snapshot', 'p'])\
-                     .unstack('p', fill_value=0)
+    gen = (reindex_by_bus_carrier(n.pnl(c)[attr].loc[snapshots] * n.df(c).sign,
+                                  c, n) for c in comps)
+    return xr.concat(gen, dim='carrier', fill_value=0)
 
 def power_production(n, snapshots=None, per_carrier=False, update=False):
     """
@@ -430,16 +425,16 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    if not hasattr(n, 'p_plus') or update:
+    if 'p_plus' not in n.buses_t or update:
         prod = _one_port_attr(n, n.snapshots)
-        n.buses_t['p_plus'] = prod.sel(carrier=(prod>=0).any(['snapshot', 'bus']))\
+        n.buses_t['p_plus'] = prod.sel(carrier=(prod>=1e-8).any(['snapshot', 'bus']))\
                                   .clip(min=0)
     prod = n.buses_t.p_plus.sel(snapshot=snapshots)
     if not per_carrier:
         prod = prod.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return prod
 
-def power_demand(n, snapshots=None, per_carrier=False, update=False):
+def power_demand(n, snapshots=None, per_carrier=False, update=True):
     """
     Calculate the gross power consumption per bus and optionally carrier.
 
@@ -461,16 +456,16 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    if not hasattr(n, 'p_minus') or update:
+    if 'p_minus' not in n.buses_t or update:
         demand = _one_port_attr(n, n.snapshots)
-        n.buses_t['p_minus'] = (- demand).sel(carrier=(demand<=0)
+        n.buses_t['p_minus'] = (- demand).sel(carrier=(demand<=-1e-8)
                                           .any(['snapshot', 'bus'])).clip(min=0)
     demand = n.buses_t.p_minus.sel(snapshot=snapshots)
     if not per_carrier:
         demand = demand.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return demand
 
-def self_consumption(n, snapshots=None, update=False):
+def self_consumption(n, snapshots=None, update=True):
     """
     Calculate the self consumed power, i.e. power that is not injected in the
     network and consumed by the bus itself
