@@ -434,7 +434,7 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
         prod = prod.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return prod
 
-def power_demand(n, snapshots=None, per_carrier=False, update=True):
+def power_demand(n, snapshots=None, per_carrier=False, update=False):
     """
     Calculate the gross power consumption per bus and optionally carrier.
 
@@ -465,7 +465,7 @@ def power_demand(n, snapshots=None, per_carrier=False, update=True):
         demand = demand.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return demand
 
-def self_consumption(n, snapshots=None, update=True):
+def self_consumption(n, snapshots=None, update=False):
     """
     Calculate the self consumed power, i.e. power that is not injected in the
     network and consumed by the bus itself

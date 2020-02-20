@@ -22,3 +22,5 @@ def get_network_pure_dc_link():
 def get_network_large():
     return pypsa.Network(str(modulepath.joinpath('networks', 'european_model.h5')))
 
+def get_network_mini():
+    return pypsa.Network(str(modulepath.joinpath('networks', 'mini_model.h5')))

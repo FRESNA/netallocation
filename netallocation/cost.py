@@ -113,11 +113,11 @@ def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
     return DataArray(n.carriers[attr], dims='source_carrier') * ds
 
 
-def locational_market_price(n, snapshots=None, per_energy=False):
+def locational_market_price(n, snapshots=None, per_MW=False):
     """
     Get the locational market price (LMP) of 1 MWh in a solved network.
 
-    If per_energy is set to True, the marginal price are mutliplied by
+    If per_MW is set to True, the marginal price are mutliplied by
     n.snapshot_weightings, thus it reflects the price of 1 MW produced for
     elapsed time.
 
@@ -126,7 +126,7 @@ def locational_market_price(n, snapshots=None, per_energy=False):
     n : pypsa.Network
     snapshots : subset of n.snapshots
         The default None results in taking all snapshots of n.
-    per_energy : bool, optional
+    per_MW : bool, optional
         See above. The default is False.
 
     Returns
@@ -137,20 +137,21 @@ def locational_market_price(n, snapshots=None, per_energy=False):
     """
     snapshots = check_snapshots(snapshots, n)
     ma = DataArray(n.buses_t.marginal_price.loc[snapshots], dims=['snapshot', 'bus'])
-    if per_energy:
+    if per_MW:
         ma *= DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
     return ma
 
 
-def locational_market_price_diff(n, snapshots=None):
-    return - Incidence(n) @ locational_market_price(n, snapshots)
+def locational_market_price_diff(n, snapshots=None, per_MW=True):
+    return - Incidence(n) @ locational_market_price(n, snapshots, per_MW)
 
 
-def congestion_revenue(n, snapshots=None):
-    return locational_market_price_diff(n, snapshots) * network_flow(n, snapshots)
+def congestion_revenue(n, snapshots=None, per_MW=True):
+    return locational_market_price_diff(n, snapshots, per_MW) * \
+           network_flow(n, snapshots)
 
 
-def nodal_demand_cost(n, snapshots=None, per_energy=False):
+def nodal_demand_cost(n, snapshots=None, per_MW=True):
     """
     Calculate the nodal demand cost per bus and snapshot.
 
@@ -165,17 +166,18 @@ def nodal_demand_cost(n, snapshots=None, per_energy=False):
     """
     snapshots = check_snapshots(snapshots, n)
     return power_demand(n, snapshots) * \
-           locational_market_price(n, snapshots, per_energy)
+           locational_market_price(n, snapshots, per_MW)
 
 
 def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
-                   co2_constr_name='co2_limit'):
+                   co2_constr_name='CO2Limit'):
     c = 'Generator'
-    em = n.pnl(c).p / n.df(c).efficiency * n.df(c).carrier.map(n.carriers[co2_attr])
-    return DataArray(n.global_constraints.mu[co2_constr_name] * em)
+    price = n.global_constraints.mu[co2_constr_name]
+    return price * reindex_by_bus_carrier(n.pnl(c).p / n.df(c).efficiency *
+                                  n.df(c).carrier.map(n.carriers[co2_attr]), c, n)
 
 
-def nodal_production_revenue(n, snapshots=None, per_energy=False):
+def nodal_production_revenue(n, snapshots=None, per_MW=True):
     """
     Calculate the nodal production revenue per bus and snapshot.
 
@@ -191,7 +193,7 @@ def nodal_production_revenue(n, snapshots=None, per_energy=False):
     """
     snapshots = check_snapshots(snapshots, n)
     return power_production(n, snapshots) * \
-           locational_market_price(n, snapshots, per_energy)
+           locational_market_price(n, snapshots, per_MW)
 
 
 
