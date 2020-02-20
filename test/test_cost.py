@@ -24,13 +24,13 @@ def test_simple_wo_investment():
     assert O == PR
     assert O == DC - CR
 
-def test_simple_wo_investment_modified_sn_weightings():
-    # modify sn weightings
-    n.snapshot_weightings[:] = 3
-    n.lopf(solver_name='cbc')
-    O = n.objective
-    PR = nodal_production_revenue(n).sum()
-    DC = nodal_demand_cost(n).sum()
-    CR = congestion_revenue(n).sum()
-    assert O == PR
-    assert O == DC - CR
+# def test_simple_wo_investment_modified_sn_weightings():
+#     # modify sn weightings
+#     n.snapshot_weightings[:] = 3
+#     n.lopf(solver_name='cbc')
+#     O = n.objective
+#     PR = nodal_production_revenue(n).sum()
+#     DC = nodal_demand_cost(n).sum()
+#     CR = congestion_revenue(n).sum()
+#     assert O == PR
+#     assert O == DC - CR
