@@ -33,10 +33,6 @@ def filter_null(da, dim=None):
         return da.where(da != 0).dropna(dim, how='all')
     return da.where(da != 0)
 
-def array_as_sparse(da):
-    "Convert a dense xr.DataArray to a sparse dataarray."
-    return da.copy(data=as_coo(da.data))
-
 def as_sparse(ds):
     """
     Convert dense dataset/dataarray into a sparse dataset.
@@ -52,14 +48,9 @@ def as_sparse(ds):
 
     """
     ds = obj_if_acc(ds)
-    if isinstance(ds, xr.Dataset):
-        return ds.assign(**{k: array_as_sparse(ds[k]) for k in ds})
-    else:
-        return array_as_sparse(ds)
+    func = lambda data: COO(data) if not isinstance(data, COO) else data
+    return xr.apply_ufunc(func, ds)
 
-def array_as_dense(da):
-    "Convert a sparse xr.DataArray to a dense dataarray."
-    return da.copy(data=da.data.todense())
 
 def as_dense(ds):
     """
@@ -76,10 +67,8 @@ def as_dense(ds):
 
     """
     ds = obj_if_acc(ds)
-    if isinstance(ds, xr.Dataset):
-        return ds.assign(**{k: array_as_dense(ds[k]) for k in ds})
-    else:
-        return array_as_dense(ds)
+    func = lambda data: data.todense() if isinstance(data, COO) else data
+    return xr.apply_ufunc(func, ds)
 
 def is_sparse(ds):
     """

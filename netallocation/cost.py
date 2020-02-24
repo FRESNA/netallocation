@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
-from pypsa.descriptors import get_switchable_as_dense as get_as_dense
+from pypsa.descriptors import get_switchable_as_dense as get_as_dense, get_extendable_i
 from xarray import DataArray, Dataset, concat
+import pypsa
 
 from .flow import flow_allocation, network_flow
 from .utils import reindex_by_bus_carrier, check_carriers, check_snapshots
@@ -143,7 +144,7 @@ def locational_market_price(n, snapshots=None, per_MW=False):
 
 
 def locational_market_price_diff(n, snapshots=None, per_MW=True):
-    return - Incidence(n) @ locational_market_price(n, snapshots, per_MW)
+    return Incidence(n) @ locational_market_price(n, snapshots, per_MW)
 
 
 def congestion_revenue(n, snapshots=None, per_MW=True):
@@ -196,6 +197,13 @@ def nodal_production_revenue(n, snapshots=None, per_MW=True):
            locational_market_price(n, snapshots, per_MW)
 
 
+def objective_constant(n):
+    nom_attr = pypsa.descriptors.nominal_attrs.items()
+    constant = 0
+    for c, attr in nom_attr:
+        ext_i = get_extendable_i(n, c)
+        constant += n.df(c)[attr][ext_i] @ n.df(c).capital_cost[ext_i]
+    return constant
 
 # Total Production Revenue + Total Congetion Renvenue = Total Demand Cost
 # (nodal_production_revenue(n).sum() + congestion_revenue(n).sum())/ nodal_demand_cost(n).sum() == 1

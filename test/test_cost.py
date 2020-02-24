@@ -22,7 +22,7 @@ def test_simple_wo_investment():
     DC = nodal_demand_cost(n).sum()
     CR = congestion_revenue(n).sum()
     assert O == PR
-    assert O == DC - CR
+    assert O == DC + CR
 
 # def test_simple_wo_investment_modified_sn_weightings():
 #     # modify sn weightings
@@ -33,4 +33,4 @@ def test_simple_wo_investment():
 #     DC = nodal_demand_cost(n).sum()
 #     CR = congestion_revenue(n).sum()
 #     assert O == PR
-#     assert O == DC - CR
+#     assert O == DC + CR
