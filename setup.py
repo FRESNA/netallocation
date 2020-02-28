@@ -16,7 +16,7 @@ setup(
     include_package_data=True,
     install_requires=['pypsa','pandas==0.25.3', 'pyyaml', 'xarray', 'progressbar2',
                       'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml',
-                      'netcdf4'],
+                      'netcdf4','glpk'],
     extras_require={
         'docs': [
             'sphinx >= 1.4',
