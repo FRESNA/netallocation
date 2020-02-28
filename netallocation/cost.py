@@ -291,17 +291,6 @@ def objective_constant(n):
     return constant
 
 
-def check_duality(n):
-    O = n.objective + objective_constant(n)
-    PR = nodal_production_revenue(n).sum()
-    CO2C = nodal_co2_cost(n, co2_constr_name='co2_limit').sum()
-    DC = nodal_demand_cost(n).sum()
-    CR_ext, CR_fix = congestion_revenue(n, split=True)
-    assert isclose(O, PR - CO2C - CR_ext.sum())
-    assert isclose(O, DC - CO2C + CR_fix.sum())
-
-
-
 # Total Production Revenue + Total Congetion Renvenue = Total Demand Cost
 # (nodal_production_revenue(n).sum() + congestion_revenue(n).sum())/ nodal_demand_cost(n).sum() == 1
 
