@@ -5,18 +5,7 @@ dependencies:
   - python
   - pip
   - numpy
+  - pandas < 1.0
   - coincbc
   - pip:
     - netallocation
-  # - xarray
-  # - progressbar2
-  # - pypsa
-  # - sparse
-  # - dask
-  # - pathlib
-  # - h5py
-  # - scipy
-  # - pyyaml
-  # - geopandas
-  # - pandas
-  # - cartopy
