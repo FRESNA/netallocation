@@ -8,6 +8,7 @@ modules.
 import pandas as pd
 import xarray as xr
 from pypsa.geo import haversine_pts
+from pypsa.descriptors import get_extendable_i, get_non_extendable_i
 from sparse import as_coo, COO
 
 def upper(ds):
@@ -21,10 +22,22 @@ def lower(ds):
     return ds.clip(max=0)
 
 def get_branches_i(n, branch_components=None):
-    "Get a pd.Multiindex for all branches in the Network."
+    "Get a pd.Multiindex for all branches in the network."
     branch_components = check_branch_comps(branch_components, n)
     return pd.concat((n.df(c)[[]] for c in branch_components),
            keys=branch_components).index.rename(['component', 'branch_i'])
+
+def get_ext_branches_i(n, branch_components=None):
+    "Get a pd.Multiindex for all extendable branches in the network."
+    branch_components = check_branch_comps(branch_components, n)
+    return pd.Index(sum(([(c, i) for i in get_extendable_i(n, c)]
+                                 for c in n.branch_components), []))
+
+def get_non_ext_branches_i(n, branch_components=None):
+    "Get a pd.Multiindex for all non-extendable branches in the network."
+    branch_components = check_branch_comps(branch_components, n)
+    return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
+                                 for c in n.branch_components), []))
 
 def filter_null(da, dim=None):
     "Drop all coordinates with only null/nan entries on dimensions dim."

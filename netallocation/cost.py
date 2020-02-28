@@ -1,14 +1,19 @@
 import numpy as np
 import pandas as pd
-from pypsa.descriptors import get_switchable_as_dense as get_as_dense, get_extendable_i
+from pypsa.descriptors import (get_switchable_as_dense as get_as_dense,
+                               get_extendable_i, get_non_extendable_i)
 from xarray import DataArray, Dataset, concat
 import pypsa
+import logging
 
 from .flow import flow_allocation, network_flow
-from .utils import reindex_by_bus_carrier, check_carriers, check_snapshots
+from .utils import (reindex_by_bus_carrier, check_carriers, check_snapshots,
+                    get_branches_i, get_ext_branches_i, get_non_ext_branches_i)
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
-from .grid import power_production, power_demand, Incidence
+from .grid import power_production, power_demand, Incidence, Cycles, impedance
+
+logger = logging.getLogger(__name__)
 
 # ma = n.buses_t.marginal_price.loc[sns].T
 # K = ntl.Incidence(n)
@@ -147,9 +152,84 @@ def locational_market_price_diff(n, snapshots=None, per_MW=True):
     return Incidence(n) @ locational_market_price(n, snapshots, per_MW)
 
 
-def congestion_revenue(n, snapshots=None, per_MW=True):
-    return locational_market_price_diff(n, snapshots, per_MW) * \
-           network_flow(n, snapshots)
+def cycle_constraint_cost(n, snapshots=None):
+    """
+    Calculate the cost per branch and snapshot for the cycle constraint
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    Returns
+    -------
+    xr.DataArray
+        Cycle cost for passive branches, dimension {snapshot, branch}.
+
+    """
+    C = []; i = 0
+    for sub in n.sub_networks.obj:
+        coords={'branch': sub.branches().index.rename(('component', 'branch_i')),
+                'cycle': range(i, i+sub.C.shape[1])}
+        i += sub.C.shape[1]
+        C.append(DataArray(sub.C.todense(), coords, ['branch', 'cycle']))
+    C = concat(C, dim='cycle').fillna(0)
+    snapshots = check_snapshots(snapshots, n)
+    comps = n.passive_branch_components
+    f = network_flow(n, snapshots, comps)
+    z = impedance(n, comps)
+    sp = n.sub_networks_t.mu_kirchhoff_voltage_law.loc[snapshots]
+    shadowprice = DataArray(sp, dims=['snapshot', 'cycle']) * 1e5
+    return (C * z * f * shadowprice).sum('cycle')
+
+
+def congestion_revenue(n, snapshots=None, per_MW=True, split=False):
+    """
+    Calculate the congestion revenue (CR) per brnach and snapshot.
+
+    The CR includes all costs of the transmission system. The sum over all
+    snapshots of this is equal to the capital investments per branch.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+    per_MW : bool, optional
+        If per_MW is set to True, the marginal price are mutliplied by
+        `n.snapshot_weightings`, thus it reflects the price of 1 MW produced for
+        elapsed time. The default is True.
+    split : bool, optional
+        If True, two CRs are returned, one indicating the renvenue for
+        extendable branches, one for non-extendable branches.
+
+    Example
+    -------
+
+    >>>>
+
+    Returns
+    -------
+    xr.DataArray
+        Congestion Revenue, dimension {snapshot, branch}.
+
+    """
+    cr = locational_market_price_diff(n, snapshots, per_MW) * \
+         network_flow(n, snapshots)
+    if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
+        cr += cycle_constraint_cost(n, snapshots).reindex_like(cr, fill_value=0)
+    else:
+        logger.warn(' The cost of cycle constraints cannot be calculated, as '
+                    'the shadowprices for those are missing. Please solve the '
+                    'network with `keep_shadowprices=True` for including them.')
+    if split:
+        ext_i = get_ext_branches_i(n)
+        non_ext_i = get_non_ext_branches_i(n)
+        return cr.sel(branch=ext_i).assign_attrs(branch = 'extendables'),\
+               cr.sel(branch=non_ext_i).assign_attrs(branch = 'non_extendables')
+
+    return cr
 
 
 def nodal_demand_cost(n, snapshots=None, per_MW=True):
@@ -169,10 +249,15 @@ def nodal_demand_cost(n, snapshots=None, per_MW=True):
     return power_demand(n, snapshots) * \
            locational_market_price(n, snapshots, per_MW)
 
-
 def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
                    co2_constr_name='CO2Limit'):
     c = 'Generator'
+    if co2_constr_name is None:
+        return np.array(0)
+    if co2_constr_name not in n.global_constraints.index:
+        logger.warn(f'Constraint {co2_constr_name} not in n.global_constraints'
+                    ', setting CO₂ constraint cost to zero.')
+        return np.array(0)
     price = n.global_constraints.mu[co2_constr_name]
     return price * reindex_by_bus_carrier(n.pnl(c).p / n.df(c).efficiency *
                                   n.df(c).carrier.map(n.carriers[co2_attr]), c, n)
@@ -204,6 +289,18 @@ def objective_constant(n):
         ext_i = get_extendable_i(n, c)
         constant += n.df(c)[attr][ext_i] @ n.df(c).capital_cost[ext_i]
     return constant
+
+
+def check_duality(n):
+    O = n.objective + objective_constant(n)
+    PR = nodal_production_revenue(n).sum()
+    CO2C = nodal_co2_cost(n, co2_constr_name='co2_limit').sum()
+    DC = nodal_demand_cost(n).sum()
+    CR_ext, CR_fix = congestion_revenue(n, split=True)
+    assert isclose(O, PR - CO2C - CR_ext.sum())
+    assert isclose(O, DC - CO2C + CR_fix.sum())
+
+
 
 # Total Production Revenue + Total Congetion Renvenue = Total Demand Cost
 # (nodal_production_revenue(n).sum() + congestion_revenue(n).sum())/ nodal_demand_cost(n).sum() == 1
