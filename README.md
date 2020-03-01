@@ -1,4 +1,6 @@
 # netallocation 
+------------------
+### netallocation: Allocate **flows**, **emissions** and **costs** in optimized [PyPSA](https://github.com/PyPSA/PyPSA) networks
 
 [![Documentation Status](https://readthedocs.org/projects/netallocation/badge/?version=latest)](https://netallocation.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/netallocation)](https://pypi.org/project/netallocation/)
@@ -7,7 +9,12 @@
 ![Python Version](https://img.shields.io/badge/python-3.5%20%7C%203.6%20%7C%203.7-blue)
 ![license](https://img.shields.io/pypi/l/netallocation)
 
-A toolset for allocating flows and costs in [PyPSA](https://www.github.com/PyPSA/PyPSA) power systems. This package provides various functions to allocate costs among partcipants in a power network. Based on different allocation schemes, functions allow to allocate flows, losses and transmission costs in a transparent way.   
+##  What is it?
+
+**netallocation** is a python package for allocating flows, losses, emissions and costs in [PyPSA](https://www.github.com/PyPSA/PyPSA) power systems. It package provides various functions to track *where* power flows originate from and how they flow through the network. This can then be used for carbon tracing and distributing costs among the market participants. 
+
+<!-- ## Why is this useful?  -->
+
 
 
 netallocation was initially developed by the
