@@ -1,8 +1,4 @@
 from setuptools import setup
-import os
-
-os.environ["CC"] = "gcc-4.8"
-os.environ["CXX"] = "gcc-4.8"
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
