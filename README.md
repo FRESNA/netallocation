@@ -11,7 +11,7 @@
 
 ##  What is it?
 
-**netallocation** is a python package for allocating flows, losses, emissions and costs in [PyPSA](https://www.github.com/PyPSA/PyPSA) power systems. It package provides various functions to track *where* power flows originate from and how they flow through the network. This can then be used for carbon tracing and distributing costs among the market participants. 
+**netallocation** is a python package for allocating flows, losses, emissions and costs in [PyPSA](https://www.github.com/PyPSA/PyPSA) power systems. It provides various functions to track *where* power flows originate from and how they flow through the network. This can then be used for carbon tracing and distributing costs among the market participants. 
 
 <!-- ## Why is this useful?  -->
 
