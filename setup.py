@@ -1,4 +1,5 @@
 from setuptools import setup
+import os
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -17,6 +18,8 @@ setup(
     install_requires=['pypsa','pandas==0.25.3', 'pyyaml', 'xarray', 'progressbar2',
                       'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml',
                       'netcdf4','glpk'],
+    os.environ["CC"] = "gcc-4.8"
+    os.environ["CXX"] = "gcc-4.8"
     extras_require={
         'docs': [
             'sphinx >= 1.4',
