@@ -15,7 +15,7 @@ jobs:
         python-version: 3.8
     - name: Install dependencies
       run: |
-        export CC=/usr/bin/gcc
+        sudo apt-get install coinor-cbc
         python -m pip install --upgrade pip
         pip install -e .
     - name: Lint with flake8
