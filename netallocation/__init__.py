@@ -18,6 +18,6 @@ from .utils import as_dense, as_sparse
 from . import (utils, breakdown, grid, flow, linalg, plot, cost,
                plot_helpers, test, io, common, process)
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 __author__ = "Fabian Hofmann (FIAS)"
 __copyright__ = "Copyright 2015-2020 Fabian Hofmann (FIAS), GNU GPL 3"

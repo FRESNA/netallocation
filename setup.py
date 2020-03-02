@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='netallocation',
-    version='0.0.2',
+    version='0.0.3',
     author='Fabian Hofmann (FIAS)',
     author_email='hofmann@fias.uni-frankfurt.de',
     description='Package for allocating flows and costs in a PyPSA network',
