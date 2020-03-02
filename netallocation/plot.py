@@ -90,11 +90,12 @@ def chord_diagram(ds, agg='mean', minimum_quantile=0,
              .initialize_plot()
     return fig, fig.axes
 
+european_bounds = [-10. , 30, 36, 70]
 
 def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                    sus_size_factor=1e4,
                    carrier_colors=None, carrier_names=None,
-                   figsize=(10, 5), boundaries=[-10. , 30, 36, 70],
+                   figsize=(10, 5), boundaries=None,
                    **kwargs):
     """
     Plot a pypsa.Network generation and storage capacity

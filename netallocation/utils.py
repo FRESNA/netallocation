@@ -193,6 +193,10 @@ def check_carriers(n):
         n.loads['carrier'] = 'Load'
     if 'carrier' not in n.stores:
         n.stores['carrier'] = n.stores.bus.map(n.buses.carrier)
+    if 'carrier' not in n.lines:
+        n.lines['carrier'] = n.lines.bus0.map(n.buses.carrier)
+    if 'carrier' not in n.links:
+        n.links['carrier'] = n.links.bus0.map(n.buses.carrier)
 
 def check_snapshots(arg, n):
     """

@@ -13,7 +13,7 @@ from pathlib import Path
 modulepath = Path(__file__).parent
 
 def get_network_ac_dc():
-    return pypsa.Network(str(modulepath.joinpath('networks','test.h5')))
+    return pypsa.Network(str(modulepath.joinpath('networks','ac_dc.h5')))
 
 
 def get_network_pure_dc_link():
