@@ -30,9 +30,6 @@ def expand_by_source_type(ds, n, chunksize=None):
         Allocation Data with dimension 'source'
     n : pypsa.Network()
         Network which the allocation was derived from
-    components : list, default ['Generator', 'StorageUnit']
-        List of considered components. Carrier types of these components are
-        taken for breakdown.
     chunksize : int
         Chunksize of the snapshot chunks passed to dask for computing faster
         and with less memory usage for large datasets.
@@ -45,7 +42,7 @@ def expand_by_source_type(ds, n, chunksize=None):
     """
     ds = obj_if_acc(ds)
     ds = vip_to_p2p(ds)
-    sns = ds.get_index('snapshot')
+    sns = ds.snapshot
     prod = power_production(n, sns, per_carrier=True)
     share = (prod / prod.sum('carrier'))\
              .rename(bus='source', carrier='source_carrier').fillna(0)
@@ -78,11 +75,8 @@ def expand_by_sink_type(ds, n, chunksize=None):
     ----------
     ds : xarray.Dataset
         Allocation Data with dimension 'sink'
-    n : pypsa.Network()
+    n : pypsa.Network
         Network which the allocation was derived from
-    components : list, default ['Load', 'StorageUnit']
-        List of considered components. Carrier types of these components are
-        taken for breakdown.
     chunksize : int
         Chunksize of the snapshot chunks passed to dask for computing faster
         and with less memory usage for large datasets.
@@ -95,7 +89,7 @@ def expand_by_sink_type(ds, n, chunksize=None):
     """
     ds = obj_if_acc(ds)
     ds = vip_to_p2p(ds)
-    sns = ds.get_index('snapshot')
+    sns = ds.snapshot
     demand = power_demand(n, sns, per_carrier=True)
     share = (demand / demand.sum('carrier'))\
              .rename(bus='sink', carrier='sink_carrier')
@@ -113,3 +107,39 @@ def expand_by_sink_type(ds, n, chunksize=None):
         with ProgressBar():
             res = (ds[p2p].chunk(chunk) * share.chunk(chunk)).compute()
     return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+
+
+def by_carriers(ds, n, chunksize=None):
+    """
+    Breakdown allocation into production and demand carriers.
+
+    Use this funtion to breakdown the share of single production carriers
+    (carriers of generators, storage units, stores) and demand carriers
+    (carriers of loads, storage units, stores). Note that carrier names of all
+    components have to be unique. The funtion will return the a dataset or
+    dataarray with two additional dimensions, `source_carrier` and
+    `sink_carrier`.
+
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Allocation Data with dimension `sink` and `source`
+    n : pypsa.Network
+        Network which the allocation was derived from
+    chunksize : int
+        Chunksize of the snapshot chunks passed to dask for computing faster
+        and with less memory usage for large datasets.
+
+    Example
+    -------
+    >>> ap = ntl.flow_allocation(n, n.snapshots, method='ap')
+    >>> ntl.breakdown.carriers(ap, n)
+
+    """
+    ds = obj_if_acc(ds)
+    if 'sink_carrier' not in ds.dims:
+        ds = expand_by_sink_type(ds, n, chunksize)
+    if 'source_carrier' not in ds.dims:
+        ds = expand_by_source_type(ds, n, chunksize)
+    return ds

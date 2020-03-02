@@ -23,7 +23,7 @@ class AllocationAccessor:
         self._obj = xarray_obj
 
     from .io import store_dataset as to_dir
-    from .breakdown import expand_by_sink_type, expand_by_source_type
+    from .breakdown import by_carriers
     from .utils import as_dense, as_sparse, filter_null, lower, upper
     from .convert import virtual_patterns, vip_to_p2p
     from .plot import chord_diagram as plot_chord_diagram
@@ -41,7 +41,7 @@ class AllocationAccessor:
     def __init__(self, xarray_obj):
         self._obj = xarray_obj
 
-    from .breakdown import expand_by_sink_type, expand_by_source_type
+    from .breakdown import by_carriers
     from .utils import as_dense, as_sparse, filter_null, lower, upper
     from .convert import virtual_patterns, vip_to_p2p
     from .plot import chord_diagram as plot_chord_diagram

@@ -11,6 +11,7 @@ import pandas as pd
 from sparse import COO
 from .utils import as_dense, upper, lower, is_sparse, as_sparse
 from .grid import network_flow
+from .breakdown import by_carriers
 from dask.diagnostics import ProgressBar
 import logging
 
@@ -18,7 +19,7 @@ def ensure_time_average(ds):
     if 'snapshot' in ds.dims:
         return ds.mean('snapshot')
     else:
-        ds
+        return ds
 
 def split_local_nonlocal_consumption(ds):
     index = pd.Index(['local', 'nonlocal'], name='consumption_type')
@@ -50,8 +51,9 @@ def nonlocal_consumption(ds):
                       for b in buses), dim='source')
 
 
-def carrier_to_carrier(ds, split_local_nonlocal=False):
+def carrier_to_carrier(ds, n, split_local_nonlocal=False):
     ds = ensure_time_average(ds)
+    ds = by_carriers(ds, n)
     if not split_local_nonlocal:
         return as_dense(ds.peer_to_peer.sum(['source', 'sink']))
     local = as_dense(local_consumption(ds).sum(['source', 'sink']))
@@ -60,8 +62,9 @@ def carrier_to_carrier(ds, split_local_nonlocal=False):
     return xr.concat([local, non_local], dim=index)
 
 
-def carrier_to_branch(ds):
+def carrier_to_branch(ds, n):
     ds = ensure_time_average(ds)
+    ds = by_carriers(ds, n)
     return ds.peer_on_branch_to_peer.sum(['source', 'sink'])
 
 
