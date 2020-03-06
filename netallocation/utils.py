@@ -8,7 +8,8 @@ modules.
 import pandas as pd
 import xarray as xr
 from pypsa.geo import haversine_pts
-from pypsa.descriptors import get_extendable_i, get_non_extendable_i
+from pypsa.descriptors import (get_extendable_i, get_non_extendable_i,
+                               nominal_attrs)
 from sparse import as_coo, COO
 
 def upper(ds):
@@ -38,6 +39,27 @@ def get_non_ext_branches_i(n, branch_components=None):
     branch_components = check_branch_comps(branch_components, n)
     return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
                                  for c in n.branch_components), []))
+
+def get_ext_one_ports_i(n, per_carrier=True):
+    "Get a pd.Multiindex for all extendable branches in the network."
+    check_carriers(n)
+    comps = n.one_port_components & set(nominal_attrs)
+    if per_carrier:
+        return pd.MultiIndex.from_frame(pd.concat(n.df(c).loc[
+                get_extendable_i(n, c), ['bus', 'carrier']] for c in comps))
+    return pd.Index(sum(([(c, i) for i in get_extendable_i(n, c)]
+                                 for c in comps), []))
+
+def get_non_ext_one_ports_i(n, per_carrier=True):
+    "Get a pd.Multiindex for all non-extendable branches in the network."
+    check_carriers(n)
+    comps = n.one_port_components & set(nominal_attrs)
+    if per_carrier:
+        return pd.MultiIndex.from_frame(pd.concat(n.df(c).loc[
+                get_non_extendable_i(n, c), ['bus', 'carrier']] for c in comps))
+    return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
+                                 for c in comps), []))
+
 
 def filter_null(da, dim=None):
     "Drop all coordinates with only null/nan entries on dimensions dim."

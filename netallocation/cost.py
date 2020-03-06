@@ -8,7 +8,8 @@ import logging
 
 from .flow import flow_allocation, network_flow
 from .utils import (reindex_by_bus_carrier, check_carriers, check_snapshots,
-                    get_branches_i, get_ext_branches_i, get_non_ext_branches_i)
+                    get_branches_i, get_ext_branches_i, get_non_ext_branches_i,
+                    get_ext_one_ports_i, get_non_ext_one_ports_i)
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
 from .grid import power_production, power_demand, Incidence, Cycles, impedance
@@ -263,7 +264,7 @@ def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
                                   n.df(c).carrier.map(n.carriers[co2_attr]), c, n)
 
 
-def nodal_production_revenue(n, snapshots=None, per_MW=True):
+def nodal_production_revenue(n, snapshots=None, per_MW=True, split=False):
     """
     Calculate the nodal production revenue per bus and snapshot.
 
@@ -278,8 +279,18 @@ def nodal_production_revenue(n, snapshots=None, per_MW=True):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    return power_production(n, snapshots) * \
-           locational_market_price(n, snapshots, per_MW)
+    if split:
+        pr = (power_production(n, snapshots, per_carrier=True) * \
+             locational_market_price(n, snapshots, per_MW))\
+             .stack(bus_carrier=['bus', 'carrier'])
+        ext_i = get_ext_one_ports_i(n, per_carrier=True)
+        non_ext_i = get_non_ext_one_ports_i(n, per_carrier=True)
+        return (pr.sel(bus_carrier = ext_i).unstack('bus_carrier').sum('carrier'),
+                pr.sel(bus_carrier = non_ext_i).unstack('bus_carrier').sum('carrier'))
+    else:
+        return power_production(n, snapshots) * \
+               locational_market_price(n, snapshots, per_MW)
+
 
 
 def objective_constant(n):
