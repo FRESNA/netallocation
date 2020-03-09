@@ -21,7 +21,7 @@ from numpy.testing import assert_allclose as np_assert_allclose, \
 n = ntl.test.get_network_ac_dc()
 n_dc = ntl.test.get_network_pure_dc_link()
 n_large = ntl.test.get_network_large()
-
+n_mini = ntl.test.get_network_mini()
 tol_kwargs = dict(atol=1e-5, rtol=1)
 
 
@@ -127,12 +127,12 @@ def test_eqivalent_bilateral_exchanges():
     assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
 
 def test_zbus_linear():
-    sn = n.snapshots[0]
-    A = ntl.flow.flow_allocation(n, sn, method='zbus')
+    sn = n_mini.snapshots
+    A = ntl.flow.flow_allocation(n_mini, sn, method='zbus')
     total_injection = A.virtual_injection_pattern.sum('injection_pattern')
-    assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
+    assert_allclose(total_injection, network_injection(n_mini, sn), **tol_kwargs)
     total_flow = A.virtual_flow_pattern.sum('bus')
-    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+    assert_allclose(total_flow, network_flow(n_mini, sn).T, **tol_kwargs)
 
 def test_average_participation_sparse():
     sn = n.snapshots[0]

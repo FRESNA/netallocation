@@ -315,11 +315,8 @@ def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
 
     K = Incidence(n, branch_components=branch_components)
     Y = Ybus(n, branch_components, linear=linear)  # Ybus matrix
-
     v = voltage(n, snapshot, linear=linear)
-
     H = PTDF(n, branch_components) if linear else CISF(n, branch_components)
-
     i = dot(Y, v)
     f = network_flow(n, snapshot, branch_components)
     if downstream is None:
@@ -335,7 +332,9 @@ def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
     else:
         # real(conj(i) * v) == n.buses_t.p.loc[snapshot].T
         vif = real( v_ * conj(H) * conj(i))
-    vip = K.dot(vif.rename(bus='injection_pattern'), 'branch')
+    vif = vif.transpose(..., 'branch', 'bus')
+    vip = K.dot(vif.rename(bus='injection_pattern'), 'branch')\
+           .transpose(..., 'bus', 'injection_pattern')
     return Dataset({'virtual_flow_pattern': vif,
                     'virtual_injection_pattern': vip},
                   attrs={'method': 'Zbus flow allocation'})
