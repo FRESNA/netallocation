@@ -126,6 +126,13 @@ def test_eqivalent_bilateral_exchanges():
     total_flow = A.virtual_flow_pattern.sum('bus')
     assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
 
+def test_zbus_linear():
+    sn = n.snapshots[0]
+    A = ntl.flow.flow_allocation(n, sn, method='zbus')
+    total_injection = A.virtual_injection_pattern.sum('injection_pattern')
+    assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
+    total_flow = A.virtual_flow_pattern.sum('bus')
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
 
 def test_average_participation_sparse():
     sn = n.snapshots[0]

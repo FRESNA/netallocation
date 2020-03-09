@@ -281,7 +281,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     return as_sparse(res) if sparse else res
 
 
-def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
+def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
                       branch_components=None):
     r"""
     Perform a Zbus Transmission allocation.
@@ -335,7 +335,7 @@ def zbus_transmission(n, snapshot=None, linear=False, downstream=None,
     else:
         # real(conj(i) * v) == n.buses_t.p.loc[snapshot].T
         vif = real( v_ * conj(H) * conj(i))
-    vip = K.dot(vif, 'branch')
+    vip = K.dot(vif.rename(bus='injection_pattern'), 'branch')
     return Dataset({'virtual_flow_pattern': vif,
                     'virtual_injection_pattern': vip},
                   attrs={'method': 'Zbus flow allocation'})
