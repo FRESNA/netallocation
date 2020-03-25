@@ -16,31 +16,23 @@ from .grid import power_production, power_demand, Incidence, Cycles, impedance
 
 logger = logging.getLogger(__name__)
 
-# ma = n.buses_t.marginal_price.loc[sns].T
-# K = ntl.Incidence(n)
-# transmission_cost = - K.T @ ma
-# f = ntl.network_flow(n, sns).T
-# tso_profit = transmission_cost * f
-# revenue = n.loads_t.p.T.groupby(n.loads.bus).sum() * ma
-# expenses = (n.generators_t.p * n.generators.marginal_cost).T\
-#             .groupby(n.generators.bus).sum() + \
-#             (n.storage_units_t.p * n.storage_units.marginal_cost).T\
-#             .groupby(n.storage_units.bus).sum()
-# revenue.sum() - expenses.sum() - tso_profit.sum()
 
-
-def weight_with_generation_cost(n, ds, snapshots=None):
+def weight_with_generation_cost(ds, n, snapshots=None, dim='source',
+                                add_co2_cost=False, co2_attr='co2_emissions',
+                                co2_constr_name=None, **kwargs):
     """
     Allocate the production cost on the basis of a peer-to-peer allocation.
 
     Parameters
     ----------
-    n : pypsa.Network
     ds : str/xarray.Dataset
         Allocation method, e.g. 'ap' or already calculated power allocation
         dataset, i.e. from ntl.allocate_flow.
+    n : pypsa.Network
     snapshots : subset of n.snapshots
         The default None results in taking all snapshots of n.
+    dim : str
+        Name of dimension to be expanded by carrier (must contain bus names).
 
     Returns
     -------
@@ -49,28 +41,35 @@ def weight_with_generation_cost(n, ds, snapshots=None):
 
     """
     if isinstance(ds, str):
-        ds = flow_allocation(n, snapshots, ds)
-    snapshots = check_snapshots(snapshots, n)
+        snapshots = check_snapshots(snapshots, n)
+        ds = flow_allocation(n, snapshots, ds, **kwargs)
+    else:
+        snapshots = ds.snapshot.values
     check_carriers(n)
-    ds = expand_by_source_type(ds, n)
+    ds = expand_by_source_type(ds, n, dim=dim).rename(source_carrier='carrier')
     comps = ['Generator', 'StorageUnit', 'Store']
-    gen = (reindex_by_bus_carrier(get_as_dense(n, c, 'marginal_cost', snapshots),
-                                  c, n) for c in comps)
-    prodcost_pu = concat(gen, dim='carrier')\
-                  .rename(bus='source', carrier='source_carrier')
+    gen = (reindex_by_bus_carrier(
+        get_as_dense(n, c, 'marginal_cost').loc[snapshots], c, n) for c in comps)
+    prodcost_pu = concat(gen, dim='carrier')
+    if add_co2_cost:
+        ep = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)
+        prodcost_pu = prodcost_pu + ep
+    if 'name' in prodcost_pu.dims:
+        prodcost_pu = prodcost_pu.rename(name='snapshot')
+    prodcost_pu = prodcost_pu.rename(bus=dim)
     return prodcost_pu * ds
 
 
-def weight_with_branch_cost(n, ds, snapshots=None):
+def weight_with_branch_cost(ds, n, snapshots=None):
     """
     Allocate the branch cost on the basis of an allocation method.
 
     Parameters
     ----------
-    n : pypsa.Network
     ds : str/xarray.Dataset
         Allocation method, e.g. 'ap' or already calculated power allocation
         dataset, i.e. from ntl.allocate_flow.
+    n : pypsa.Network
     snapshots : subset of n.snapshots
         The default None results in taking all snapshots of n.
 
@@ -93,16 +92,16 @@ def weight_with_branch_cost(n, ds, snapshots=None):
     return branchcost_pu * ds
 
 
-def weight_with_carrier_attribute(n, ds, attr, snapshots=None):
+def weight_with_carrier_attribute(ds, n, attr, snapshots=None):
     """
     Allocate an carrier attribute on the basis of a peer-to-peer allocation.
 
     Parameters
     ----------
-    n : pypsa.Network
     ds : str/xarray.Dataset
         Allocation method, e.g. 'ap' or already calculated power allocation
         dataset, i.e. from ntl.allocate_flow.
+    n : pypsa.Network
     attr : str/pd.Series/pd.DataFrame
     snapshots : subset of n.snapshots
         The default None results in taking all snapshots of n.
@@ -143,10 +142,14 @@ def locational_market_price(n, snapshots=None, per_MW=False):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    ma = DataArray(n.buses_t.marginal_price.loc[snapshots], dims=['snapshot', 'bus'])
+    ma = n.buses_t.marginal_price.loc[snapshots]
     if per_MW:
-        ma *= DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
-    return ma
+        ma = ma.mul(n.snapshot_weightings.loc[snapshots], axis=0)
+    if isinstance(ma, pd.Series):
+        return DataArray(ma, dims=['bus']).assign_coords(snapshot=snapshots)
+    else:
+        return DataArray(ma, dims=['snapshot', 'bus'])
+
 
 
 def locational_market_price_diff(n, snapshots=None, per_MW=True):
@@ -250,18 +253,33 @@ def nodal_demand_cost(n, snapshots=None, per_MW=True):
     return power_demand(n, snapshots) * \
            locational_market_price(n, snapshots, per_MW)
 
-def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
-                   co2_constr_name='CO2Limit'):
+
+def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
+                   co2_constr_name=None):
     c = 'Generator'
     if co2_constr_name is None:
-        return np.array(0)
-    if co2_constr_name not in n.global_constraints.index:
+        con_i = n.global_constraints.index
+        co2_constr_name = con_i[con_i.str.contains('CO2', case=False) &
+                                con_i.str.contains('Limit', case=False)]
+        if co2_constr_name.empty:
+            logger.warn('No CO2 constraint found.')
+            return np.array(0)
+        else:
+            co2_constr_name = co2_constr_name[0]
+    elif co2_constr_name not in n.global_constraints.index:
         logger.warn(f'Constraint {co2_constr_name} not in n.global_constraints'
                     ', setting CO₂ constraint cost to zero.')
         return np.array(0)
     price = n.global_constraints.mu[co2_constr_name]
-    return price * reindex_by_bus_carrier(n.pnl(c).p / n.df(c).efficiency *
-                                  n.df(c).carrier.map(n.carriers[co2_attr]), c, n)
+    eff_emission = n.df(c).carrier.map(n.carriers[co2_attr]) / n.df(c).efficiency
+    return price * reindex_by_bus_carrier(eff_emission, c, n)
+
+
+def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
+                   co2_constr_name=None):
+    c = 'Generator'
+    price_per_gen = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)
+    return reindex_by_bus_carrier(n.pnl(c).p, c, n) * price_per_gen
 
 
 def nodal_production_revenue(n, snapshots=None, per_MW=True, split=False):
@@ -300,6 +318,31 @@ def objective_constant(n):
         ext_i = get_extendable_i(n, c)
         constant += n.df(c)[attr][ext_i] @ n.df(c).capital_cost[ext_i]
     return constant
+
+
+def allocate_cost(n, snapshots=None, method='ap', **kwargs):
+    """
+    Allocate production cost based on an allocation method.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+    method : str/xarray.Dataset
+        Method on which the cost allocation is based. Must be an available
+        method for ``netallocation.allocate_flow``. Alternatively to a string,
+        an calculated allocation xarray.Dataset can be passed.
+
+    Returns
+    -------
+    xarray.DataArray
+        Peer-to-peer cost allocation.
+
+    """
+    ds = flow_allocation(n, snapshots, method, **kwargs)
+    p2p = vip_to_p2p(ds, n).peer_to_peer
+    return weight_with_generation_cost(p2p, n).sum('carrier')
+
 
 
 # Total Production Revenue + Total Congetion Renvenue = Total Demand Cost

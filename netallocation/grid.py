@@ -434,6 +434,31 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
         prod = prod.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return prod
 
+def energy_production(n, snapshots=None, per_carrier=False, update=False):
+    """
+    Calculate the gross energy production per bus (and carrier).
+
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots, default None
+        If None, all snapshots are taken.
+    per_carrier : bool, optional
+        Whether to calculate the power production per bus and carrier.
+        The default is False.
+    update : bool, optional
+        Whether to recalculate cashed data. The default is False.
+
+    Returns
+    -------
+    Produced energy data with dimensions snapshot, bus, carrier (optionally).
+
+    """
+    snapshots = check_snapshots(snapshots, n)
+    sn_weightings = DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+    return power_production(n, snapshots, per_carrier, update) * sn_weightings
+
 def power_demand(n, snapshots=None, per_carrier=False, update=False):
     """
     Calculate the gross power consumption per bus and optionally carrier.
@@ -464,6 +489,32 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
     if not per_carrier:
         demand = demand.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
     return demand
+
+
+def energy_demand(n, snapshots=None, per_carrier=False, update=False):
+    """
+    Calculate the gross energy consumption per bus and optionally carrier.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots, default None
+        If None, all snapshots are taken.
+    per_carrier : bool, optional
+        Whether to calculate the power demand per bus and carrier.
+        The default is False.
+    update : bool, optional
+        Whether to recalculate cashed data. The default is False.
+
+    Returns
+    -------
+    Energy demand data with dimensions snapshot, bus, carrier (optionally).
+
+    """
+    snapshots = check_snapshots(snapshots, n)
+    sn_weightings = DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+    return power_demand(n, snapshots, per_carrier, update) * sn_weightings
+
 
 def self_consumption(n, snapshots=None, update=False):
     """

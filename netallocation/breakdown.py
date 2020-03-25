@@ -7,7 +7,7 @@ Created on Thu Mar  7 15:38:24 2019
 """
 
 from .grid import power_demand, power_production, network_injection
-from .utils import as_sparse, obj_if_acc, is_sparse
+from .utils import as_sparse, obj_if_acc, is_sparse, check_dataset, check_carriers
 from .convert import vip_to_p2p
 from sparse import COO
 import logging
@@ -17,7 +17,7 @@ from dask.diagnostics import ProgressBar
 logger = logging.getLogger(__name__)
 
 
-def expand_by_source_type(ds, n, chunksize=None):
+def expand_by_source_type(ds, n, chunksize=None, dim='source'):
     """
     Breakdown allocation into generation carrier type.
 
@@ -33,6 +33,8 @@ def expand_by_source_type(ds, n, chunksize=None):
     chunksize : int
         Chunksize of the snapshot chunks passed to dask for computing faster
         and with less memory usage for large datasets.
+    dim : str
+        Name of dimension to be expanded by carrier (must contain bus names).
 
     Example
     -------
@@ -41,30 +43,31 @@ def expand_by_source_type(ds, n, chunksize=None):
 
     """
     ds = obj_if_acc(ds)
-    ds = vip_to_p2p(ds)
+    ds, was_ds = check_dataset(ds)
     sns = ds.snapshot
     prod = power_production(n, sns, per_carrier=True)
     share = (prod / prod.sum('carrier'))\
-             .rename(bus='source', carrier='source_carrier').fillna(0)
-    # p = network_injection(n, ds.get_index('snapshot'))
-    # is_source = p.rename(bus='source') > 0
-    p2p = [k for k in ds if k.startswith('peer')]
-    if is_sparse(ds[p2p]):
+             .rename(bus=dim, carrier='source_carrier').fillna(0)
+    assert dim in ds.dims, f'Dimension {dim} not present in Dataset'
+    expand = ds[[k for k in ds if dim in ds[k].dims]]
+    if is_sparse(expand):
         share = as_sparse(share.fillna(0))
-    elif any(isinstance(ds[v], COO) for v in ds):
+    if any(isinstance(expand[v], COO) for v in expand):
         TypeError('All variables of the dataset must either be sparse or dense.')
 
     logger.info('Expanding by source carrier')
     if chunksize is None:
-        res = ds[p2p] * share
+        res = expand * share
     else:
         chunk = {'snapshot': chunksize}
         with ProgressBar():
-            res = (ds[p2p].chunk(chunk) * share.chunk(chunk)).compute()
-    return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+            res = (expand.chunk(chunk) * share.chunk(chunk)).compute()
+    if was_ds:
+        return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+    return res[list(res)[0]]
 
 
-def expand_by_sink_type(ds, n, chunksize=None):
+def expand_by_sink_type(ds, n, chunksize=None, dim='source'):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
 
@@ -80,6 +83,8 @@ def expand_by_sink_type(ds, n, chunksize=None):
     chunksize : int
         Chunksize of the snapshot chunks passed to dask for computing faster
         and with less memory usage for large datasets.
+    dim : str
+        Name of dimension to be expanded by carrier (must contain bus names).
 
     Example
     -------
@@ -88,25 +93,28 @@ def expand_by_sink_type(ds, n, chunksize=None):
 
     """
     ds = obj_if_acc(ds)
-    ds = vip_to_p2p(ds)
+    ds, was_ds = check_dataset(ds)
     sns = ds.snapshot
     demand = power_demand(n, sns, per_carrier=True)
     share = (demand / demand.sum('carrier'))\
-             .rename(bus='sink', carrier='sink_carrier')
-    p2p = [k for k in ds if k.startswith('peer')]
-    if is_sparse(ds[p2p]):
+             .rename(bus=dim, carrier='sink_carrier')
+    assert dim in ds.dims, f'Dimension {dim} not present in Dataset'
+    expand = ds[[k for k in ds if dim in ds[k].dims]]
+    if is_sparse(expand):
         share = as_sparse(share.fillna(0))
-    elif any(isinstance(ds[v], COO) for v in ds):
+    if any(isinstance(expand[v], COO) for v in expand):
         TypeError('All variables of the dataset must either be sparse or dense.')
 
     logger.info('Expanding by sink carrier')
     if chunksize is None:
-        res = ds[p2p] * share
+        res = expand * share
     else:
         chunk = {'snapshot': chunksize}
         with ProgressBar():
-            res = (ds[p2p].chunk(chunk) * share.chunk(chunk)).compute()
-    return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+            res = (expand.chunk(chunk) * share.chunk(chunk)).compute()
+    if was_ds:
+        return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+    return res[list(res)[0]]
 
 
 def by_carriers(ds, n, chunksize=None):

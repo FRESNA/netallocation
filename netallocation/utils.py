@@ -186,9 +186,28 @@ def reindex_by_bus_carrier(df, c, n):
 
     """
     check_duplicated_carrier(n)
-    df = df.rename(columns=n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
-    df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
-    return xr.DataArray(df).unstack('dim_1', fill_value=0)
+    if isinstance(df, pd.DataFrame):
+        df = df.rename(columns=n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
+        df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
+        return xr.DataArray(df).unstack('dim_1', fill_value=0)
+    else:
+        df = df.rename(n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
+        df.index = pd.MultiIndex.from_tuples(df.index, names=['bus', 'carrier'])
+        return xr.DataArray(df).unstack('dim_0', fill_value=0)
+
+
+def check_dataset(ds):
+    """
+    Ensure the argument is an xarray.Dataset.
+
+    If the argument was a Dataset, the a tupel (ds, True) is returned, if it
+    isn't' a Dataset a tuple of the (Dataset(ds), False) is returned.
+    """
+    if isinstance(ds, xr.Dataset):
+        return ds, True
+    else:
+        name = 'variable' if ds.name is None else ds.name
+        return xr.Dataset({name: ds}), False
 
 
 def check_duplicated_carrier(n):
@@ -226,6 +245,10 @@ def check_snapshots(arg, n):
     """
     if isinstance(arg, pd.Index):
         return arg.rename('snapshot')
+    if isinstance(arg, xr.DataArray):
+        if not arg.dims:
+            return arg
+        return arg.to_index()
     return n.snapshots.rename('snapshot') if arg is None else arg
 
 def set_default_if_none(arg, n, attr):

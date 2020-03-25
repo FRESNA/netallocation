@@ -5,8 +5,9 @@ This module comprises functions to convert different representations of
 allocation into each other.
 """
 import xarray as xr
-from .utils import obj_if_acc, upper
-from .grid import Incidence
+import pandas as pd
+from .utils import obj_if_acc, upper, check_dataset
+from .grid import Incidence, self_consumption
 
 
 def virtual_patterns(ds, n, q=0.5):
@@ -30,7 +31,7 @@ def virtual_patterns(ds, n, q=0.5):
     Dataset was passed, passes the converted DataArray if a DataArray was passed.
 
     """
-    if 'virtual_flow_pattern' in ds:
+    if 'virtual_flow_pattern' in ds and 'virtual_injection_pattern' in ds:
         return ds
     ds = obj_if_acc(ds)
     is_dataset = isinstance(ds, xr.Dataset)
@@ -38,12 +39,13 @@ def virtual_patterns(ds, n, q=0.5):
     vfp = q * da.sum('sink').rename(source='bus') + \
           (1 - q) * da.sum('source').rename(sink='bus')
     K = Incidence(n, vfp.get_index('branch').unique('component'))
-    vip = K.rename(bus='virtual_injection_pattern') @ vfp
+    vip = K.rename(bus='injection_pattern') @ vfp
     virtuals = xr.Dataset({'virtual_flow_pattern': vfp.T,
-                           'virtual_injection_patterns': vip.T})
+                           'virtual_injection_pattern': vip.T})
     return ds.merge(virtuals) if is_dataset else virtuals
 
-def vip_to_p2p(ds):
+
+def vip_to_p2p(ds, n):
     """
     Converts a virtual injection pattern into a peer-to-peer allocation.
 
@@ -59,11 +61,15 @@ def vip_to_p2p(ds):
     passed, passes the converted DataArray if a DataArray was passed.
 
     """
-    if 'peer_to_peer' in ds:
-        return ds
     ds = obj_if_acc(ds)
-    is_dataset = isinstance(ds, xr.Dataset)
-    da = ds.virtual_injection_pattern if is_dataset else ds
-    p2p = upper(da.rename(injection_pattern='sink', bus='source') -
-                da.rename(injection_pattern='source', bus='sink'))
-    return ds.assign(peer_to_peer = p2p) if is_dataset else p2p
+    ds, was_ds = check_dataset(ds)
+    if 'peer_to_peer' in ds:
+        return ds if was_ds else ds['peer_to_peer']
+    vip = ds.virtual_injection_pattern
+    p2p = upper(vip.rename(injection_pattern='sink', bus='source') -
+                vip.rename(injection_pattern='source', bus='sink'))
+    s = self_consumption(n, ds.snapshot)
+    s['bus'] = pd.MultiIndex.from_tuples([(b,b) for b in s['bus'].values],
+                                         names=['source', 'sink'])
+    p2p += s.unstack('bus', fill_value=0).reindex_like(p2p)
+    return ds.assign(peer_to_peer = p2p) if was_ds else p2p
