@@ -32,13 +32,13 @@ def get_ext_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all extendable branches in the network."
     branch_components = check_branch_comps(branch_components, n)
     return pd.Index(sum(([(c, i) for i in get_extendable_i(n, c)]
-                                 for c in n.branch_components), []))
+                                 for c in branch_components), []))
 
 def get_non_ext_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all non-extendable branches in the network."
     branch_components = check_branch_comps(branch_components, n)
     return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
-                                 for c in n.branch_components), []))
+                                 for c in branch_components), []))
 
 def get_ext_one_ports_i(n, per_carrier=True):
     "Get a pd.Multiindex for all extendable branches in the network."
@@ -68,21 +68,25 @@ def get_ext_one_ports_b(n):
 
 def get_ext_branches_b(n):
     ds = pd.concat({c: n.df(c)[attr + '_extendable'] for c, attr
-                     in nominal_attrs.items() if c in n.branch_components},
-                     names=['component', 'branch_i'])
+                   in nominal_attrs.items() if c in sorted(n.branch_components)},
+                   names=['component', 'branch_i'])
     return xr.DataArray(ds, dims='branch')
 
 
 def split_one_ports(ds, n):
     "Split data into extendable one ports and nonextendable one ports"
     ext_b = get_ext_one_ports_b(n)
-    return ds.where(ext_b).fillna(0), ds.where(~ext_b).fillna(0)
+    d = {'ext': ds.where(ext_b).fillna(0),
+         'fix': ds.where(~ext_b).fillna(0)}
+    return xr.Dataset(d) if isinstance(ds, xr.DataArray) else d
 
 
 def split_branches(ds, n):
     "Split data into extendable one ports and nonextendable one ports"
     ext_b = get_ext_branches_b(n)
-    return ds.where(ext_b).fillna(0), ds.where(~ext_b).fillna(0)
+    d = {'ext': ds.where(ext_b).fillna(0),
+         'fix': ds.where(~ext_b).fillna(0)}
+    return xr.Dataset(d) if isinstance(ds, xr.DataArray) else d
 
 
 def generation_carriers(n):
@@ -286,7 +290,7 @@ def set_default_if_none(arg, n, attr):
     """
     Set any argument to an attribute of n if None
     """
-    return getattr(n, attr) if arg is None else arg
+    return sorted(getattr(n, attr)) if arg is None else arg
 
 def check_passive_branch_comps(arg, n):
     """

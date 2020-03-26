@@ -23,26 +23,28 @@ def check_duality(n, co2_constr_name=None):
     PR = nodal_production_revenue(n).sum()
     CO2C = nodal_co2_cost(n).sum()
     DC = nodal_demand_cost(n).sum()
-    CR_ext, CR_fix = congestion_revenue(n, split=True)
-    assert close(O, PR - CO2C - CR_ext.sum())
-    assert close(O, DC - CO2C + CR_fix.sum())
+    CR = congestion_revenue(n, split=True).sum()
+    assert close(O, PR - CO2C - CR['ext'])
+    assert close(O, DC - CO2C + CR['fix'])
 
 def check_zero_profit_branches(n):
     cost_ext = n.branches().fillna(0)\
                 .eval('(s_nom_opt + p_nom_opt) * capital_cost')\
                 [get_ext_branches_i(n)]
-    CR_ext, CR_fix = congestion_revenue(n, split=True)
-    assert all(close(cost_ext, -CR_ext.sum('snapshot'))), ("Zero Profit "
-            "condition for branches is not fulfilled.")
+    CR = congestion_revenue(n, split=True)['ext'].sum('snapshot')
+    assert all(close(cost_ext, -CR)), (
+        "Zero Profit condition for branches is not fulfilled.")
 
 
 def check_zero_profit_generators(n):
     cost_ext = n.generators.query('p_nom_extendable')\
                 .eval('p_nom_opt * capital_cost')
     cost_ext = reindex_by_bus_carrier(cost_ext, 'Generator', n).sum('carrier')
-    PR_ext, _ = nodal_production_revenue(n, split=True)
-    PR_ext = PR_ext.sum('snapshot').reindex_like(cost_ext)
-    assert all(close(cost_ext, PR_ext)), ("Zero Profit "
+    PR = nodal_production_revenue(n, split=True)['ext'].sum('snapshot')
+    PR = PR.reindex_like(cost_ext)
+    CO2C = nodal_co2_cost(n, split=True)['ext'].sum('snapshot')
+    CO2C = CO2C.reindex_like(cost_ext)
+    assert all(close(cost_ext, PR - CO2C)), ("Zero Profit "
             "condition for generators is not fulfilled.")
 
 

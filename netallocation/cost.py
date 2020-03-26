@@ -8,8 +8,7 @@ import logging
 
 from .flow import flow_allocation, network_flow
 from .utils import (reindex_by_bus_carrier, check_carriers, check_snapshots,
-                    get_branches_i, get_ext_branches_i, get_non_ext_branches_i,
-                    get_ext_one_ports_i, get_non_ext_one_ports_i,
+                    get_branches_i, split_one_ports, split_branches,
                     snapshot_weightings)
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
@@ -220,13 +219,7 @@ def congestion_revenue(n, snapshots=None, split=False):
         logger.warn(' The cost of cycle constraints cannot be calculated, as '
                     'the shadowprices for those are missing. Please solve the '
                     'network with `keep_shadowprices=True` for including them.')
-    if split:
-        ext_i = get_ext_branches_i(n)
-        non_ext_i = get_non_ext_branches_i(n)
-        return cr.sel(branch=ext_i).assign_attrs(branch = 'extendables'),\
-               cr.sel(branch=non_ext_i).assign_attrs(branch = 'non_extendables')
-
-    return cr
+    return split_branches(cr, n) if split else cr
 
 
 def nodal_demand_cost(n, snapshots=None):
@@ -285,7 +278,7 @@ def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
 
 
 def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
-                   co2_constr_name=None):
+                   co2_constr_name=None, split=False):
     """
     Calculate the total system cost caused by the CO2 constraint.
 
@@ -304,8 +297,10 @@ def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
 
     """
     price_per_gen = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)
-    return (energy_production(n, snapshots, per_carrier=True) * price_per_gen)\
-            .sum('carrier')
+    cost = (energy_production(n, snapshots, per_carrier=True) * price_per_gen)
+    if split:
+        cost = split_one_ports(cost, n)
+    return cost.sum('carrier')
 
 
 def nodal_production_revenue(n, snapshots=None, split=False):
@@ -324,14 +319,9 @@ def nodal_production_revenue(n, snapshots=None, split=False):
     """
     snapshots = check_snapshots(snapshots, n)
     if split:
-        pr = (energy_production(n, snapshots, per_carrier=True) * \
-              locational_market_price(n, snapshots))\
-              .stack(bus_carrier=['bus', 'carrier'])
-        ext_i = get_ext_one_ports_i(n, per_carrier=True)
-        non_ext_i = get_non_ext_one_ports_i(n, per_carrier=True)
-        return (pr.sel(bus_carrier = ext_i).unstack('bus_carrier').sum('carrier'),
-                pr.sel(bus_carrier = non_ext_i).unstack('bus_carrier')\
-                    .sum('carrier'))
+        pr = energy_production(n, snapshots, per_carrier=True) * \
+             locational_market_price(n, snapshots)
+        return split_one_ports(pr, n).sum('carrier')
     return energy_production(n, snapshots) * locational_market_price(n, snapshots)
 
 
