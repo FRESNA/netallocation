@@ -61,6 +61,10 @@ def get_non_ext_one_ports_i(n, per_carrier=True):
                                  for c in comps), []))
 
 
+def snapshot_weightings(n, snapshots=None):
+    snapshots = check_snapshots(snapshots, n)
+    return xr.DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+
 def filter_null(da, dim=None):
     "Drop all coordinates with only null/nan entries on dimensions dim."
     da = obj_if_acc(da)

@@ -66,6 +66,13 @@ def test_duality_wo_investment_2():
     check_zero_profit_branches(n)
 
 
+def test_duality_with_investment_wo_CO2():
+    n = ntl.test.get_network_ac_dc()
+    n.remove('GlobalConstraint', 'co2_limit')
+    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+    check_duality(n, co2_constr_name='co2_limit')
+    check_zero_profit_branches(n)
+
 
 def test_duality_with_investment():
     n = ntl.test.get_network_ac_dc()

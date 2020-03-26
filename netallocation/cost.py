@@ -9,10 +9,12 @@ import logging
 from .flow import flow_allocation, network_flow
 from .utils import (reindex_by_bus_carrier, check_carriers, check_snapshots,
                     get_branches_i, get_ext_branches_i, get_non_ext_branches_i,
-                    get_ext_one_ports_i, get_non_ext_one_ports_i)
+                    get_ext_one_ports_i, get_non_ext_one_ports_i,
+                    snapshot_weightings)
 from .convert import vip_to_p2p
 from .breakdown import expand_by_source_type
-from .grid import power_production, power_demand, Incidence, Cycles, impedance
+from .grid import (Incidence, impedance, energy_production, energy_demand,
+                   power_production)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +88,8 @@ def weight_with_branch_cost(ds, n, snapshots=None):
     ds = expand_by_source_type(ds, n)
 
     branchcost_pu = pd.concat([get_as_dense(n, 'Link', 'marginal_cost', snapshots)],
-                              keys=['Link'], axis=1, names=['component', 'branch_i'])\
+                              keys=['Link'], axis=1,
+                              names=['component', 'branch_i'])\
                         .loc[:, lambda df: (df > 0).any()]
     branchcost_pu = DataArray(branchcost_pu, dims='branch')
     return branchcost_pu * ds
@@ -119,21 +122,15 @@ def weight_with_carrier_attribute(ds, n, attr, snapshots=None):
     return DataArray(n.carriers[attr], dims='source_carrier') * ds
 
 
-def locational_market_price(n, snapshots=None, per_MW=False):
+def locational_market_price(n, snapshots=None):
     """
     Get the locational market price (LMP) of 1 MWh in a solved network.
-
-    If per_MW is set to True, the marginal price are mutliplied by
-    n.snapshot_weightings, thus it reflects the price of 1 MW produced for
-    elapsed time.
 
     Parameters
     ----------
     n : pypsa.Network
     snapshots : subset of n.snapshots
         The default None results in taking all snapshots of n.
-    per_MW : bool, optional
-        See above. The default is False.
 
     Returns
     -------
@@ -143,8 +140,6 @@ def locational_market_price(n, snapshots=None, per_MW=False):
     """
     snapshots = check_snapshots(snapshots, n)
     ma = n.buses_t.marginal_price.loc[snapshots]
-    if per_MW:
-        ma = ma.mul(n.snapshot_weightings.loc[snapshots], axis=0)
     if isinstance(ma, pd.Series):
         return DataArray(ma, dims=['bus']).assign_coords(snapshot=snapshots)
     else:
@@ -152,8 +147,8 @@ def locational_market_price(n, snapshots=None, per_MW=False):
 
 
 
-def locational_market_price_diff(n, snapshots=None, per_MW=True):
-    return Incidence(n) @ locational_market_price(n, snapshots, per_MW)
+def locational_market_price_diff(n, snapshots=None):
+    return Incidence(n) @ locational_market_price(n, snapshots)
 
 
 def cycle_constraint_cost(n, snapshots=None):
@@ -183,12 +178,13 @@ def cycle_constraint_cost(n, snapshots=None):
     comps = n.passive_branch_components
     f = network_flow(n, snapshots, comps)
     z = impedance(n, comps)
+    w = snapshot_weightings(n, snapshots)
     sp = n.sub_networks_t.mu_kirchhoff_voltage_law.loc[snapshots]
     shadowprice = DataArray(sp, dims=['snapshot', 'cycle']) * 1e5
-    return (C * z * f * shadowprice).sum('cycle')
+    return (C * z * f * shadowprice * w).sum('cycle')
 
 
-def congestion_revenue(n, snapshots=None, per_MW=True, split=False):
+def congestion_revenue(n, snapshots=None, split=False):
     """
     Calculate the congestion revenue (CR) per brnach and snapshot.
 
@@ -200,10 +196,6 @@ def congestion_revenue(n, snapshots=None, per_MW=True, split=False):
     n : pypsa.Network
     snapshots : subset of n.snapshots
         The default None results in taking all snapshots of n.
-    per_MW : bool, optional
-        If per_MW is set to True, the marginal price are mutliplied by
-        `n.snapshot_weightings`, thus it reflects the price of 1 MW produced for
-        elapsed time. The default is True.
     split : bool, optional
         If True, two CRs are returned, one indicating the renvenue for
         extendable branches, one for non-extendable branches.
@@ -219,8 +211,8 @@ def congestion_revenue(n, snapshots=None, per_MW=True, split=False):
         Congestion Revenue, dimension {snapshot, branch}.
 
     """
-    cr = locational_market_price_diff(n, snapshots, per_MW) * \
-         network_flow(n, snapshots)
+    cr = locational_market_price_diff(n, snapshots) * \
+         network_flow(n, snapshots) * snapshot_weightings(n, snapshots)
     if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
         cr += cycle_constraint_cost(n, snapshots).reindex_like(cr, fill_value=0)
     else:
@@ -236,7 +228,7 @@ def congestion_revenue(n, snapshots=None, per_MW=True, split=False):
     return cr
 
 
-def nodal_demand_cost(n, snapshots=None, per_MW=True):
+def nodal_demand_cost(n, snapshots=None):
     """
     Calculate the nodal demand cost per bus and snapshot.
 
@@ -250,12 +242,28 @@ def nodal_demand_cost(n, snapshots=None, per_MW=True):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    return power_demand(n, snapshots) * \
-           locational_market_price(n, snapshots, per_MW)
+    return energy_demand(n, snapshots) * locational_market_price(n, snapshots)
 
 
 def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
-                   co2_constr_name=None):
+                    co2_constr_name=None):
+    """
+    Get the CO2 price per MWh_el.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+    co2_attr : str, optional
+        Name of the co2 emission attribut in n.carriers. The default is
+        'co2_emissions'.
+    co2_constr_name : str, optional
+        Name of the CO2 limit constraint in n.global_constraint.
+        The default is None will lead to searching for constraints which
+        contain the strings "CO2" and "Limit".
+
+    """
     c = 'Generator'
     if co2_constr_name is None:
         con_i = n.global_constraints.index
@@ -277,12 +285,29 @@ def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
 
 def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
                    co2_constr_name=None):
+    """
+    Calculate the total system cost caused by the CO2 constraint.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+    co2_attr : str, optional
+        Name of the co2 emission attribut in n.carriers. The default is
+        'co2_emissions'.
+    co2_constr_name : str, optional
+        Name of the CO2 limit constraint in n.global_constraint.
+        The default is None will lead to searching for constraints which
+        contain the strings "CO2" and "Limit".
+
+    """
     c = 'Generator'
     price_per_gen = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)
-    return reindex_by_bus_carrier(n.pnl(c).p, c, n) * price_per_gen
+    return power_production(n, snapshots) * price_per_gen
 
 
-def nodal_production_revenue(n, snapshots=None, per_MW=True, split=False):
+def nodal_production_revenue(n, snapshots=None, split=False):
     """
     Calculate the nodal production revenue per bus and snapshot.
 
@@ -298,16 +323,15 @@ def nodal_production_revenue(n, snapshots=None, per_MW=True, split=False):
     """
     snapshots = check_snapshots(snapshots, n)
     if split:
-        pr = (power_production(n, snapshots, per_carrier=True) * \
-             locational_market_price(n, snapshots, per_MW))\
-             .stack(bus_carrier=['bus', 'carrier'])
+        pr = (energy_production(n, snapshots, per_carrier=True) * \
+              locational_market_price(n, snapshots))\
+              .stack(bus_carrier=['bus', 'carrier'])
         ext_i = get_ext_one_ports_i(n, per_carrier=True)
         non_ext_i = get_non_ext_one_ports_i(n, per_carrier=True)
         return (pr.sel(bus_carrier = ext_i).unstack('bus_carrier').sum('carrier'),
-                pr.sel(bus_carrier = non_ext_i).unstack('bus_carrier').sum('carrier'))
-    else:
-        return power_production(n, snapshots) * \
-               locational_market_price(n, snapshots, per_MW)
+                pr.sel(bus_carrier = non_ext_i).unstack('bus_carrier')\
+                    .sum('carrier'))
+    return energy_production(n, snapshots) * locational_market_price(n, snapshots)
 
 
 
