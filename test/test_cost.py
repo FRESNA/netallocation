@@ -12,7 +12,7 @@ import netallocation as ntl
 from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
                                  nodal_production_revenue, congestion_revenue,
                                  weight_with_generation_cost, allocate_cost)
-from netallocation.utils import get_ext_branches_i
+from netallocation.utils import get_ext_branches_i, reindex_by_bus_carrier
 from xarray.testing import assert_allclose, assert_equal
 from pypsa.descriptors import nominal_attrs
 close = lambda d1, d2: d1.round(0) == d2.round(0)
@@ -36,6 +36,16 @@ def check_zero_profit_branches(n):
             "condition for branches is not fulfilled.")
 
 
+def check_zero_profit_generators(n):
+    cost_ext = n.generators.query('p_nom_extendable')\
+                .eval('p_nom_opt * capital_cost')
+    cost_ext = reindex_by_bus_carrier(cost_ext, 'Generator', n).sum('carrier')
+    PR_ext, _ = nodal_production_revenue(n, split=True)
+    PR_ext = PR_ext.sum('snapshot').reindex_like(cost_ext)
+    assert all(close(cost_ext, PR_ext)), ("Zero Profit "
+            "condition for generators is not fulfilled.")
+
+
 def test_duality_wo_investment():
     n = ntl.test.get_network_mini()
     for c, attr in nominal_attrs.items():
@@ -55,17 +65,18 @@ def test_duality_wo_investment_sn_weightings():
     check_zero_profit_branches(n)
 
 
+# TODO
 def test_duality_wo_investment_2():
     n = ntl.test.get_network_ac_dc()
-    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+    n.lopf(solver_name='cbc')
     for c, attr in pypsa.descriptors.nominal_attrs.items():
-        n.df(c)[attr] = n.df(c)[attr + '_opt'] + 0.01
+        n.df(c)[attr] = n.df(c)[attr + '_opt']
         n.df(c)[attr + '_extendable'] = False
-    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+    n.lopf(solver_name='cbc')
     check_duality(n)
     check_zero_profit_branches(n)
 
-
+# TODO
 def test_duality_with_investment_wo_CO2():
     n = ntl.test.get_network_ac_dc()
     n.remove('GlobalConstraint', 'co2_limit')
@@ -76,9 +87,12 @@ def test_duality_with_investment_wo_CO2():
 
 def test_duality_with_investment():
     n = ntl.test.get_network_ac_dc()
+    for c, attr in pypsa.descriptors.nominal_attrs.items():
+        n.df(c)[attr] = 0
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
     check_duality(n, co2_constr_name='co2_limit')
     check_zero_profit_branches(n)
+    check_zero_profit_generators(n)
 
 
 def test_duality_with_investment_sn_weightings():
@@ -93,7 +107,7 @@ def test_duality_with_investment_sn_weightings():
 # def test_duality_with_investment():
 #     n = ntl.test.get_network_ac_dc()
 #     n.generators.loc[['Manchester Wind', 'Manchester Gas'],
-#                      'p_nom_extendable'] = False
+#                       'p_nom_extendable'] = False
 #     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
 #     check_duality(n, co2_constr_name='co2_limit')
 #     check_zero_profit_branches(n)
@@ -114,3 +128,4 @@ def test_cost_allocation_sum():
     total_production_cost = weight_with_generation_cost(p, n, dim='bus')\
                                 .sum('carrier')
     assert_allclose(total_allocated_cost, total_production_cost)
+

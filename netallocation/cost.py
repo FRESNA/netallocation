@@ -167,6 +167,8 @@ def cycle_constraint_cost(n, snapshots=None):
         Cycle cost for passive branches, dimension {snapshot, branch}.
 
     """
+    # Interesting fact: The cycle constraint cost are not weighted with
+    # snapshot_weightings if they or not 1.
     C = []; i = 0
     for sub in n.sub_networks.obj:
         coords={'branch': sub.branches().index.rename(('component', 'branch_i')),
@@ -178,10 +180,9 @@ def cycle_constraint_cost(n, snapshots=None):
     comps = n.passive_branch_components
     f = network_flow(n, snapshots, comps)
     z = impedance(n, comps)
-    w = snapshot_weightings(n, snapshots)
     sp = n.sub_networks_t.mu_kirchhoff_voltage_law.loc[snapshots]
     shadowprice = DataArray(sp, dims=['snapshot', 'cycle']) * 1e5
-    return (C * z * f * shadowprice * w).sum('cycle')
+    return (C * z * f * shadowprice).sum('cycle')
 
 
 def congestion_revenue(n, snapshots=None, split=False):
@@ -302,9 +303,9 @@ def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
         contain the strings "CO2" and "Limit".
 
     """
-    c = 'Generator'
     price_per_gen = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)
-    return power_production(n, snapshots) * price_per_gen
+    return (energy_production(n, snapshots, per_carrier=True) * price_per_gen)\
+            .sum('carrier')
 
 
 def nodal_production_revenue(n, snapshots=None, split=False):

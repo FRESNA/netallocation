@@ -60,6 +60,33 @@ def get_non_ext_one_ports_i(n, per_carrier=True):
     return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
                                  for c in comps), []))
 
+def get_ext_one_ports_b(n):
+    check_carriers(n)
+    gen = [reindex_by_bus_carrier(n.df(c)[attr + '_extendable'], c, n)
+           for c,attr in nominal_attrs.items() if c in n.one_port_components]
+    return xr.concat(gen, dim='carrier').astype(bool)
+
+def get_ext_branches_b(n):
+    ds = pd.concat({c: n.df(c)[attr + '_extendable'] for c, attr
+                     in nominal_attrs.items() if c in n.branch_components},
+                     names=['component', 'branch_i'])
+    return xr.DataArray(ds, dims='branch')
+
+
+def split_one_ports(ds, n):
+    "Split data into extendable one ports and nonextendable one ports"
+    ext_b = get_ext_one_ports_b(n)
+    return ds.where(ext_b).fillna(0), ds.where(~ext_b).fillna(0)
+
+
+def split_branches(ds, n):
+    "Split data into extendable one ports and nonextendable one ports"
+    ext_b = get_ext_branches_b(n)
+    return ds.where(ext_b).fillna(0), ds.where(~ext_b).fillna(0)
+
+
+def generation_carriers(n):
+    return n.generators.carrier.unique()
 
 def snapshot_weightings(n, snapshots=None):
     snapshots = check_snapshots(snapshots, n)
