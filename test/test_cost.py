@@ -12,8 +12,9 @@ import netallocation as ntl
 from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
                                  nodal_production_revenue, congestion_revenue,
                                  weight_with_generation_cost, allocate_cost)
-from netallocation.utils import get_ext_branches_i, reindex_by_bus_carrier
+from netallocation.utils import get_ext_branches_b, reindex_by_bus_carrier
 from xarray.testing import assert_allclose, assert_equal
+import xarray as xr
 from pypsa.descriptors import nominal_attrs
 close = lambda d1, d2: d1.round(0) == d2.round(0)
 
@@ -30,7 +31,7 @@ def check_duality(n, co2_constr_name=None):
 def check_zero_profit_branches(n):
     cost_ext = n.branches().fillna(0)\
                 .eval('(s_nom_opt + p_nom_opt) * capital_cost')\
-                [get_ext_branches_i(n)]
+                .where(get_ext_branches_b(n).to_series(), 0)
     CR = congestion_revenue(n, split=True)['ext'].sum('snapshot')
     assert all(close(cost_ext, -CR)), (
         "Zero Profit condition for branches is not fulfilled.")
@@ -44,7 +45,8 @@ def check_zero_profit_generators(n):
     PR = PR.reindex_like(cost_ext)
     CO2C = nodal_co2_cost(n, split=True)['ext'].sum('snapshot')
     CO2C = CO2C.reindex_like(cost_ext)
-    assert all(close(cost_ext, PR - CO2C)), ("Zero Profit "
+    ratio = 100 * cost_ext/ (PR - CO2C)
+    assert all(close(xr.ones_like(ratio) * 100, ratio)), ("Zero Profit "
             "condition for generators is not fulfilled.")
 
 

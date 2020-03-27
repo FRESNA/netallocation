@@ -37,13 +37,14 @@ def Incidence(n, branch_components=None, sparse=False):
         Incidence matrix with dimensions N (#buses) x L (#branches).
 
     """
+    branch_components = check_branch_comps(branch_components, n)
     if sparse:
         K = as_coo(n.incidence_matrix(branch_components))
     else:
         K = n.incidence_matrix(branch_components).todense()
-    return DataArray(K, coords=(n.buses.index,
-                                get_branches_i(n, branch_components)),
-                     dims=['bus', 'branch']).sortby('component')
+    branches_i = get_branches_i(n, branch_components)
+    return DataArray(K, coords=(n.buses.index, branches_i), dims=['bus', 'branch'])
+
 
 def Cycles(n, branches_i=None):
     """
@@ -135,10 +136,10 @@ def impedance(n, branch_components=None, snapshot=None,
 
     comps = sorted(set(branch_components) & n.passive_branch_components)
     if linear:
-        z = pd.concat([n.df(c)[x].where(n.df(c).bus0.map(n.buses.carrier) == 'AC',
-                    n.df(c)[r]) for c in comps], keys=comps)
+        z = pd.concat({c: n.df(c)[x].where(n.df(c).bus0.map(n.buses.carrier) == 'AC',
+                    n.df(c)[r]) for c in comps})
     else:
-        z = pd.concat([n.df(c).eval(f'{r} + 1.j * {x}') for c in comps], keys=comps)
+        z = pd.concat({c: n.df(c).eval(f'{r} + 1.j * {x}') for c in comps})
     if not n.lines.empty:
         assert not np.isinf(z).any() | z.isna().any(), ('There '
         f'seems to be a problem with your {x} or {r} values. At least one of '
@@ -322,17 +323,16 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
     n.branch_components and n.snapshots respectively.
     """
     snapshots = check_snapshots(snapshots, n)
-    branch_components = check_branch_comps(branch_components, n)
-    comps = sorted(branch_components)
+    comps = check_branch_comps(branch_components, n)
     p = 'p0' if ingoing else 'p1'
     axis = int(isinstance(snapshots, (list, pd.Index)))
-    f = pd.concat([n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps],
-             keys=comps, axis=axis)
+    f = pd.concat({b: n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps},
+                  axis=axis)
     if not linear:
         q = 'q0' if ingoing else 'q1'
         pcomps = sorted(set(branch_components) & n.passive_branch_components)
-        fq = pd.concat([n.pnl(b)[q].loc[snapshots, n.df(b).index] for b in pcomps],
-             keys=pcomps, axis=axis)
+        fq = pd.concat({b: n.pnl(b)[q].loc[snapshots, n.df(b).index] for b in pcomps},
+                         axis=axis)
         f = f.add(1.j * fq, fill_value=0)
     f = f.rename_axis(['component', 'branch_i'], axis=axis)
     if axis:

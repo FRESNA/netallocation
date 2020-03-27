@@ -25,8 +25,8 @@ def lower(ds):
 def get_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all branches in the network."
     branch_components = check_branch_comps(branch_components, n)
-    return pd.concat((n.df(c)[[]] for c in branch_components),
-           keys=branch_components).index.rename(['component', 'branch_i'])
+    return pd.concat({c: n.df(c)[[]] for c in branch_components})\
+                    .index.rename(['component', 'branch_i'])
 
 def get_ext_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all extendable branches in the network."
@@ -290,7 +290,7 @@ def set_default_if_none(arg, n, attr):
     """
     Set any argument to an attribute of n if None
     """
-    return sorted(getattr(n, attr)) if arg is None else arg
+    return sorted(getattr(n, attr)) if arg is None else sorted(arg)
 
 def check_passive_branch_comps(arg, n):
     """

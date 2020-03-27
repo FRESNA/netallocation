@@ -55,6 +55,13 @@ def test_cycles():
         return (cycle == Cp).all(1).any() or (cycle == - Cp).all(1).any()
     assert C2.to_pandas().apply(cycle_in_C).all()
 
+
+def test_ordinary_PTDF():
+    p = ntl.network_injection(n, branch_components=n.passive_branch_components)
+    f = ntl.network_flow(n, branch_components=n.passive_branch_components)
+    H = ntl.grid.PTDF(n, branch_components=n.passive_branch_components)
+    assert_allclose(H @ p, f, **tol_kwargs)
+
 def test_pseudo_impedance_ac_dc():
     sn = n.snapshots[0]
     H = ntl.grid.PTDF(n, branch_components=n.branch_components, snapshot=sn)
