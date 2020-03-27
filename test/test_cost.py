@@ -29,9 +29,11 @@ def check_duality(n, co2_constr_name=None):
     assert close(O, DC - CO2C + CR['fix'])
 
 def check_zero_profit_branches(n):
-    cost_ext = n.branches().fillna(0)\
-                .eval('(s_nom_opt + p_nom_opt) * capital_cost')\
-                .where(get_ext_branches_b(n).to_series(), 0)
+    comps = sorted(n.branch_components)
+    cost_ext = pd.concat({c: n.df(c)[attr + '_opt'] * n.df(c).capital_cost
+                          for c, attr in pypsa.descriptors.nominal_attrs.items()
+                          if c in comps})[comps]\
+                 .where(get_ext_branches_b(n).to_series(), 0)
     CR = congestion_revenue(n, split=True)['ext'].sum('snapshot')
     assert all(close(cost_ext, -CR)), (
         "Zero Profit condition for branches is not fulfilled.")
@@ -69,24 +71,24 @@ def test_duality_wo_investment_sn_weightings():
     check_zero_profit_branches(n)
 
 
-# TODO
-def test_duality_wo_investment_2():
-    n = ntl.test.get_network_ac_dc()
-    n.lopf(solver_name='cbc')
-    for c, attr in pypsa.descriptors.nominal_attrs.items():
-        n.df(c)[attr] = n.df(c)[attr + '_opt']
-        n.df(c)[attr + '_extendable'] = False
-    n.lopf(solver_name='cbc')
-    check_duality(n)
-    check_zero_profit_branches(n)
+# # TODO
+# def test_duality_wo_investment_2():
+#     n = ntl.test.get_network_ac_dc()
+#     n.lopf(solver_name='cbc')
+#     for c, attr in pypsa.descriptors.nominal_attrs.items():
+#         n.df(c)[attr] = n.df(c)[attr + '_opt']
+#         n.df(c)[attr + '_extendable'] = False
+#     n.lopf(solver_name='cbc')
+#     check_duality(n)
+#     check_zero_profit_branches(n)
 
-# TODO
-def test_duality_with_investment_wo_CO2():
-    n = ntl.test.get_network_ac_dc()
-    n.remove('GlobalConstraint', 'co2_limit')
-    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-    check_duality(n, co2_constr_name='co2_limit')
-    check_zero_profit_branches(n)
+# # TODO
+# def test_duality_with_investment_wo_CO2():
+#     n = ntl.test.get_network_ac_dc()
+#     n.remove('GlobalConstraint', 'co2_limit')
+#     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+#     check_duality(n, co2_constr_name='co2_limit')
+#     check_zero_profit_branches(n)
 
 
 def test_duality_with_investment():

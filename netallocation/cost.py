@@ -216,7 +216,7 @@ def congestion_revenue(n, snapshots=None, split=False):
     if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
         cr += cycle_constraint_cost(n, snapshots).reindex_like(cr, fill_value=0)
     else:
-        logger.warn(' The cost of cycle constraints cannot be calculated, as '
+        logger.warning(' The cost of cycle constraints cannot be calculated, as '
                     'the shadowprices for those are missing. Please solve the '
                     'network with `keep_shadowprices=True` for including them.')
     return split_branches(cr, n) if split else cr
@@ -264,12 +264,12 @@ def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
         co2_constr_name = con_i[con_i.str.contains('CO2', case=False) &
                                 con_i.str.contains('Limit', case=False)]
         if co2_constr_name.empty:
-            logger.warn('No CO2 constraint found.')
+            logger.warning('No CO2 constraint found.')
             return np.array(0)
         else:
             co2_constr_name = co2_constr_name[0]
     elif co2_constr_name not in n.global_constraints.index:
-        logger.warn(f'Constraint {co2_constr_name} not in n.global_constraints'
+        logger.warning(f'Constraint {co2_constr_name} not in n.global_constraints'
                     ', setting CO₂ constraint cost to zero.')
         return np.array(0)
     price = n.global_constraints.mu[co2_constr_name]
