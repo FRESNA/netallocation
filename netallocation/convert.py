@@ -39,7 +39,7 @@ def virtual_patterns(ds, n, q=0.5):
     vfp = q * da.sum('sink').rename(source='bus') + \
           (1 - q) * da.sum('source').rename(sink='bus')
     K = Incidence(n, vfp.get_index('branch').unique('component'))
-    vip = K.rename(bus='injection_pattern') @ vfp
+    vip = K @ vfp.rename(bus='injection_pattern')
     virtuals = xr.Dataset({'virtual_flow_pattern': vfp.T,
                            'virtual_injection_pattern': vip.T})
     return ds.merge(virtuals) if is_dataset else virtuals

@@ -6,17 +6,21 @@ Created on Thu Feb 20 14:13:56 2020
 @author: fabian
 """
 
+import pytest
 import pypsa
 import pandas as pd
 import netallocation as ntl
 from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
                                  nodal_production_revenue, congestion_revenue,
-                                 weight_with_generation_cost, allocate_cost)
+                                 weight_with_generation_cost, allocate_cost,
+                                 locational_market_price)
+from netallocation.grid import energy_production
 from netallocation.utils import get_ext_branches_b, reindex_by_bus_carrier
 from xarray.testing import assert_allclose, assert_equal
 import xarray as xr
 from pypsa.descriptors import nominal_attrs
 close = lambda d1, d2: d1.round(0) == d2.round(0)
+
 
 
 def check_duality(n, co2_constr_name=None):
@@ -35,22 +39,38 @@ def check_zero_profit_branches(n):
                           if c in comps})[comps]\
                  .where(get_ext_branches_b(n).to_series(), 0)
     CR = congestion_revenue(n, split=True)['ext'].sum('snapshot')
-    assert all(close(cost_ext, -CR)), (
+    assert all(close(cost_ext + CR, xr.zeros_like(CR))), (
         "Zero Profit condition for branches is not fulfilled.")
 
 
 def check_zero_profit_generators(n):
-    cost_ext = n.generators.query('p_nom_extendable')\
-                .eval('p_nom_opt * capital_cost')
-    cost_ext = reindex_by_bus_carrier(cost_ext, 'Generator', n).sum('carrier')
-    PR = nodal_production_revenue(n, split=True)['ext'].sum('snapshot')
-    PR = PR.reindex_like(cost_ext)
-    CO2C = nodal_co2_cost(n, split=True)['ext'].sum('snapshot')
-    CO2C = CO2C.reindex_like(cost_ext)
-    ratio = 100 * cost_ext/ (PR - CO2C)
-    assert all(close(xr.ones_like(ratio) * 100, ratio)), ("Zero Profit "
+    cost_inv = n.generators.query('p_nom_extendable')\
+                .eval('p_nom_opt * capital_cost')\
+                .reindex(n.generators.index, fill_value=0)
+    cost_inv = reindex_by_bus_carrier(cost_inv, 'Generator', n).sum('carrier')
+    w = n.snapshot_weightings
+    cost_op = (n.generators_t.p * n.generators.marginal_cost).mul(w, axis=0).sum()
+    cost_op = reindex_by_bus_carrier(cost_op, 'Generator', n).sum('carrier')
+    cost = cost_inv + cost_op
+
+    e = energy_production(n, per_carrier=True)
+    carriers = [c for c in ntl.utils.generation_carriers(n) if c in e.carrier]
+    lmp = locational_market_price(n)
+    PR = (e.sel(carrier=carriers) * lmp).sum(['carrier', 'snapshot'])
+    PR = PR.reindex_like(cost)
+    CO2C = nodal_co2_cost(n).sum('snapshot')
+    CO2C = CO2C.reindex_like(cost)
+
+    assert all(close(cost, PR - CO2C)), ("Zero Profit "
             "condition for generators is not fulfilled.")
 
+# reindex_by_bus_carrier(n.generators_t.mu_lower +  n.generators_t.mu_upper,
+# 'Generator', n).rename(name='snapshot') - locational_market_price(n)
+
+
+# =============================================================================
+# Test functions
+# =============================================================================
 
 def test_duality_wo_investment():
     n = ntl.test.get_network_mini()
@@ -71,7 +91,7 @@ def test_duality_wo_investment_sn_weightings():
     check_zero_profit_branches(n)
 
 
-# # TODO
+# TODO
 # def test_duality_wo_investment_2():
 #     n = ntl.test.get_network_ac_dc()
 #     n.lopf(solver_name='cbc')
@@ -81,14 +101,17 @@ def test_duality_wo_investment_sn_weightings():
 #     n.lopf(solver_name='cbc')
 #     check_duality(n)
 #     check_zero_profit_branches(n)
+#     check_zero_profit_generators(n)
 
-# # TODO
-# def test_duality_with_investment_wo_CO2():
-#     n = ntl.test.get_network_ac_dc()
-#     n.remove('GlobalConstraint', 'co2_limit')
-#     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-#     check_duality(n, co2_constr_name='co2_limit')
-#     check_zero_profit_branches(n)
+
+def test_duality_with_investment_wo_CO2():
+    n = ntl.test.get_network_ac_dc()
+    n.generators['p_nom_min'] = 0
+    n.remove('GlobalConstraint', 'co2_limit')
+    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+    check_duality(n, co2_constr_name='co2_limit')
+    check_zero_profit_branches(n)
+    check_zero_profit_generators(n)
 
 
 def test_duality_with_investment():
@@ -108,8 +131,9 @@ def test_duality_with_investment_sn_weightings():
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
     check_duality(n, co2_constr_name='co2_limit')
     check_zero_profit_branches(n)
+    check_zero_profit_generators(n)
 
-
+# TODO
 # def test_duality_with_investment():
 #     n = ntl.test.get_network_ac_dc()
 #     n.generators.loc[['Manchester Wind', 'Manchester Gas'],
@@ -117,6 +141,7 @@ def test_duality_with_investment_sn_weightings():
 #     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
 #     check_duality(n, co2_constr_name='co2_limit')
 #     check_zero_profit_branches(n)
+#     check_zero_profit_generators(n)
 
 
 def test_duality_investment_mix_ext_nonext_lines():
@@ -125,6 +150,7 @@ def test_duality_investment_mix_ext_nonext_lines():
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
     check_duality(n, co2_constr_name='co2_limit')
     check_zero_profit_branches(n)
+    check_zero_profit_generators(n)
 
 
 def test_cost_allocation_sum():
@@ -134,4 +160,5 @@ def test_cost_allocation_sum():
     total_production_cost = weight_with_generation_cost(p, n, dim='bus')\
                                 .sum('carrier')
     assert_allclose(total_allocated_cost, total_production_cost)
+
 
