@@ -10,7 +10,8 @@ from xarray import DataArray
 import numpy as np
 from .linalg import pinv, diag, null, dot
 from .utils import (get_branches_i, reindex_by_bus_carrier, check_branch_comps,
-                    check_snapshots, check_passive_branch_comps)
+                    check_snapshots, check_passive_branch_comps,
+                    snapshot_weightings)
 from sparse import as_coo
 import logging
 import networkx as nx
@@ -239,7 +240,7 @@ def CISF(n, branch_components=None, pu_system=True):
     K = Incidence(n, branch_components)
     y = admittance(n, branch_components, pu_system=pu_system, linear=False)
     Z = Zbus(n, branch_components, pu_system=pu_system, linear=False)
-    return diag(y) @ K.T @ Z
+    return dot(diag(y), K.T, Z)
 
 def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
     """
@@ -512,7 +513,7 @@ def energy_demand(n, snapshots=None, per_carrier=False, update=False):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    sn_weightings = DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+    sn_weightings = snapshot_weightings(n, snapshots)
     return power_demand(n, snapshots, per_carrier, update) * sn_weightings
 
 

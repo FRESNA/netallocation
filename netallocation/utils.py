@@ -94,7 +94,11 @@ def generation_carriers(n):
 
 def snapshot_weightings(n, snapshots=None):
     snapshots = check_snapshots(snapshots, n)
-    return xr.DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+    w = n.snapshot_weightings.loc[snapshots]
+    if isinstance(w, pd.Series):
+        return xr.DataArray(w, dims='snapshot')
+    else:
+        return w
 
 def filter_null(da, dim=None):
     "Drop all coordinates with only null/nan entries on dimensions dim."

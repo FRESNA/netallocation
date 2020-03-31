@@ -17,7 +17,7 @@ from .utils import as_dense, as_sparse
 from .cost import allocate_cost
 
 from . import (utils, breakdown, grid, flow, linalg, plot, cost,
-               plot_helpers, test, io, common, process)
+               plot_helpers, test, io, common, process, evaluate)
 
 __version__ = '0.0.3'
 __author__ = "Fabian Hofmann (FIAS)"

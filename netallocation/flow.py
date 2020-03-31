@@ -309,7 +309,7 @@ def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
     """
     n.calculate_dependent_values()
     branch_components = check_passive_branch_comps(branch_components, n)
-    snapshot = n.snapshots[0] if snapshot is None else snapshot
+    snapshot = check_snapshots(snapshot, n)
     assert 'Link' not in branch_components, ('Component "Link" cannot be '
                 'considered in Zbus flow allocation.')
 
@@ -335,9 +335,12 @@ def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
     vif = vif.transpose(..., 'branch', 'bus')
     vip = K.dot(vif.rename(bus='injection_pattern'), 'branch')\
            .transpose(..., 'bus', 'injection_pattern')
-    return Dataset({'virtual_flow_pattern': vif,
-                    'virtual_injection_pattern': vip},
+    ds = Dataset({'virtual_flow_pattern': vif,
+                  'virtual_injection_pattern': vip},
                   attrs={'method': 'Zbus flow allocation'})
+    if isinstance(snapshot, pd.Index):
+        return ds
+    return ds.assign_coords(snapshot=snapshot)
 
 
 def with_and_without_transit(n, snapshots=None, branch_components=None):

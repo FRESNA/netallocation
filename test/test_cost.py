@@ -91,14 +91,16 @@ def test_duality_wo_investment_sn_weightings():
     check_zero_profit_branches(n)
 
 
-# TODO
+# TODO: This does only work when the shadow prices of the upper capacity
+# generator bound is taken into account.
+
 # def test_duality_wo_investment_2():
 #     n = ntl.test.get_network_ac_dc()
-#     n.lopf(solver_name='cbc')
+#     n.lopf(solver_name='cbc', pyomo=False)
 #     for c, attr in pypsa.descriptors.nominal_attrs.items():
-#         n.df(c)[attr] = n.df(c)[attr + '_opt']
+#         n.df(c)[attr] = n.df(c)[attr + '_opt'] + 0.01
 #         n.df(c)[attr + '_extendable'] = False
-#     n.lopf(solver_name='cbc')
+#     n.lopf(solver_name='cbc', pyomo=False, keep_shadowprices=True)
 #     check_duality(n)
 #     check_zero_profit_branches(n)
 #     check_zero_profit_generators(n)
@@ -133,7 +135,9 @@ def test_duality_with_investment_sn_weightings():
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
 
-# TODO
+# TODO: This does only work when the shadow prices of the upper capacity
+# generator bound is taken into account.
+
 # def test_duality_with_investment():
 #     n = ntl.test.get_network_ac_dc()
 #     n.generators.loc[['Manchester Wind', 'Manchester Gas'],
