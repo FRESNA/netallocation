@@ -9,7 +9,7 @@ import pandas as pd
 import xarray as xr
 from pypsa.geo import haversine_pts
 from pypsa.descriptors import (get_extendable_i, get_non_extendable_i,
-                               nominal_attrs)
+                               nominal_attrs, get_switchable_as_dense)
 from sparse import as_coo, COO
 
 def upper(ds):
@@ -73,9 +73,10 @@ def get_ext_branches_b(n):
     return xr.DataArray(ds, dims='branch')
 
 
-def split_one_ports(ds, n):
+def split_one_ports(ds, n, dim='bus'):
     "Split data into extendable one ports and nonextendable one ports"
-    ext_b = get_ext_one_ports_b(n)
+    assert 'carrier' in ds.dims, "Dimension 'carrier' not in dataset."
+    ext_b = get_ext_one_ports_b(n).rename(bus=dim)
     d = {'ext': ds.where(ext_b).fillna(0),
          'fix': ds.where(~ext_b).fillna(0)}
     return xr.Dataset(d) if isinstance(ds, xr.DataArray) else d
@@ -228,11 +229,21 @@ def reindex_by_bus_carrier(df, c, n):
     if isinstance(df, pd.DataFrame):
         df = df.rename(columns=n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
         df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
-        return xr.DataArray(df).unstack('dim_1', fill_value=0)
+        return xr.DataArray(df, dims=['snapshot', 'dim_1'])\
+                 .unstack('dim_1', fill_value=0)
     else:
         df = df.rename(n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
         df.index = pd.MultiIndex.from_tuples(df.index, names=['bus', 'carrier'])
         return xr.DataArray(df).unstack('dim_0', fill_value=0)
+
+
+def get_as_dense_by_bus_carrier(n, attr, comps=None, snapshots=None):
+    snapshots = check_snapshots(snapshots, n)
+    comps = check_one_port_comps(comps, n)
+    return xr.concat(
+        (reindex_by_bus_carrier(
+            get_switchable_as_dense(n, c, attr, snapshots), c, n)
+         for c in comps), dim='carrier')
 
 
 def check_dataset(ds):

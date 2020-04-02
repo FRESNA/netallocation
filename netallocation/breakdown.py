@@ -7,7 +7,8 @@ Created on Thu Mar  7 15:38:24 2019
 """
 
 from .grid import power_demand, power_production, network_injection
-from .utils import as_sparse, obj_if_acc, is_sparse, check_dataset, check_carriers
+from .utils import (as_sparse, obj_if_acc, is_sparse, check_dataset,
+                    check_carriers, check_snapshots)
 from .convert import vip_to_p2p
 from sparse import COO
 import logging
@@ -43,8 +44,10 @@ def expand_by_source_type(ds, n, chunksize=None, dim='source'):
 
     """
     ds = obj_if_acc(ds)
+    if 'source_carrier' in ds.dims:
+        return ds
     ds, was_ds = check_dataset(ds)
-    sns = ds.snapshot
+    sns = check_snapshots(ds.snapshot, n)
     prod = power_production(n, sns, per_carrier=True)
     share = (prod / prod.sum('carrier'))\
              .rename(bus=dim, carrier='source_carrier').fillna(0)
@@ -94,7 +97,7 @@ def expand_by_sink_type(ds, n, chunksize=None, dim='source'):
     """
     ds = obj_if_acc(ds)
     ds, was_ds = check_dataset(ds)
-    sns = ds.snapshot
+    sns = check_snapshots(ds.snapshot, n)
     demand = power_demand(n, sns, per_carrier=True)
     share = (demand / demand.sum('carrier'))\
              .rename(bus=dim, carrier='sink_carrier')

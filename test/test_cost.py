@@ -12,8 +12,8 @@ import pandas as pd
 import netallocation as ntl
 from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
                                  nodal_production_revenue, congestion_revenue,
-                                 weight_with_generation_cost, allocate_cost,
-                                 locational_market_price)
+                                 allocate_cost, locational_market_price,
+                                 weight_with_one_port_investment_cost)
 from netallocation.grid import energy_production
 from netallocation.utils import get_ext_branches_b, reindex_by_bus_carrier
 from xarray.testing import assert_allclose, assert_equal
@@ -31,6 +31,7 @@ def check_duality(n, co2_constr_name=None):
     CR = congestion_revenue(n, split=True).sum()
     assert close(O, PR - CO2C - CR['ext'])
     assert close(O, DC - CO2C + CR['fix'])
+
 
 def check_zero_profit_branches(n):
     comps = sorted(n.branch_components)
@@ -53,11 +54,9 @@ def check_zero_profit_generators(n):
     cost_op = reindex_by_bus_carrier(cost_op, 'Generator', n).sum('carrier')
     cost = cost_inv + cost_op
 
-    e = energy_production(n, per_carrier=True)
-    carriers = [c for c in ntl.utils.generation_carriers(n) if c in e.carrier]
-    lmp = locational_market_price(n)
-    PR = (e.sel(carrier=carriers) * lmp).sum(['carrier', 'snapshot'])
-    PR = PR.reindex_like(cost)
+    PR = nodal_production_revenue(n, per_carrier=True)
+    carriers = [c for c in ntl.utils.generation_carriers(n) if c in PR.carrier]
+    PR = PR.sel(carrier=carriers).sum(['carrier', 'snapshot']).reindex_like(cost)
     CO2C = nodal_co2_cost(n).sum('snapshot')
     CO2C = CO2C.reindex_like(cost)
 
@@ -161,7 +160,7 @@ def test_cost_allocation_sum():
     n = ntl.test.get_network_ac_dc()
     total_allocated_cost = allocate_cost(n).sum('sink').rename(source='bus')
     p = ntl.power_production(n)
-    total_production_cost = weight_with_generation_cost(p, n, dim='bus')\
+    total_production_cost = weight_with_one_port_investment_cost(p, n, dim='bus')\
                                 .sum('carrier')
     assert_allclose(total_allocated_cost, total_production_cost)
 

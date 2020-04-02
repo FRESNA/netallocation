@@ -164,7 +164,8 @@ def impedance(n, branch_components=None, snapshot=None,
     C_mix = C[:, ((C != 0) & (f != 0)).groupby('component').any().loc['Link'].values]
 
     if not C_mix.size:
-        omega = DataArray(1, f[abs(f).values > 1e-8].loc['Link'].coords)
+        sub = f.loc['Link'][abs(f.loc['Link']).values > 1e-8]
+        omega = DataArray(1, sub.coords)
     elif not z.size:
         omega = null(C_mix.loc['Link'] * f.loc['Link'])[0]
     else:
