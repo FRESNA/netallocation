@@ -433,8 +433,8 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
                                   .clip(min=0)
     prod = n.buses_t.p_plus.sel(snapshot=snapshots)
     if not per_carrier:
-        prod = prod.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
-    return prod
+        prod = prod.sum('carrier')
+    return prod.reindex(bus=n.buses.index, fill_value=0)
 
 def energy_production(n, snapshots=None, per_carrier=False, update=False):
     """
@@ -489,8 +489,8 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
                                           .any(['snapshot', 'bus'])).clip(min=0)
     demand = n.buses_t.p_minus.sel(snapshot=snapshots)
     if not per_carrier:
-        demand = demand.sum('carrier').reindex(bus=n.buses.index, fill_value=0)
-    return demand
+        demand = demand.sum('carrier')
+    return demand.reindex(bus=n.buses.index, fill_value=0)
 
 
 def energy_demand(n, snapshots=None, per_carrier=False, update=False):

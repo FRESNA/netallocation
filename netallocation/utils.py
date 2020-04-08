@@ -240,10 +240,11 @@ def reindex_by_bus_carrier(df, c, n):
 def get_as_dense_by_bus_carrier(n, attr, comps=None, snapshots=None):
     snapshots = check_snapshots(snapshots, n)
     comps = check_one_port_comps(comps, n)
+    buses_i = n.buses.index
     return xr.concat(
         (reindex_by_bus_carrier(
             get_switchable_as_dense(n, c, attr, snapshots), c, n)
-         for c in comps), dim='carrier')
+         for c in comps), dim='carrier').reindex(bus=buses_i, fill_value=0)
 
 
 def check_dataset(ds):

@@ -96,6 +96,8 @@ def expand_by_sink_type(ds, n, chunksize=None, dim='source'):
 
     """
     ds = obj_if_acc(ds)
+    if 'sink_carrier' in ds.dims:
+        return ds
     ds, was_ds = check_dataset(ds)
     sns = check_snapshots(ds.snapshot, n)
     demand = power_demand(n, sns, per_carrier=True)
