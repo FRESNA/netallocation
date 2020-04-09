@@ -223,14 +223,36 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     return fig, (ax, ax2)
 
 
-def annotate_bus_names(n, ax, shift=-0.012, size=12, color='k',
+def annotate_bus_names(n, ax, shift=-0.012, size=12, color='darkslategray',
                        **kwargs):
+    """
+    Annotate names of buses plot.
+
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    ax : matplotlib axis
+    shift : float/tuple
+        Shift of the text with respect to the x and y bus coordinate.
+        The default is -0.012.
+    size : float, optional
+        Text size. The default is 12.
+    color : string, optional
+        Text color. The default is 'k'.
+    **kwargs : dict
+        Keyword arguments going to ax.text() function. For example:
+
+        - transform=ccrs.PlateCarree()
+        - bbox=dict(facecolor='white', alpha=0.5, edgecolor='None')
+
+    """
     kwargs.setdefault('zorder', 8)
     for index in n.buses.index:
         x, y = n.buses.loc[index, ['x', 'y']] + shift
-        ax.text(x, y, index, size=size, color=color, ha="center", va="center",
+        text = ax.text(x, y, index, size=size, color=color, ha="center", va="center",
                 **kwargs)
-    return ax
+    return text
 
 
 def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,

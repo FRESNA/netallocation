@@ -12,8 +12,7 @@ import pandas as pd
 import netallocation as ntl
 from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
                                  nodal_production_revenue, congestion_revenue,
-                                 allocate_cost, locational_market_price,
-                                 weight_with_one_port_investment_cost)
+                                 allocate_cost, locational_market_price)
 from netallocation.grid import energy_production
 from netallocation.utils import get_ext_branches_b, reindex_by_bus_carrier
 from xarray.testing import assert_allclose, assert_equal
@@ -154,14 +153,5 @@ def test_duality_investment_mix_ext_nonext_lines():
     check_duality(n, co2_constr_name='co2_limit')
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
-
-
-def test_cost_allocation_sum():
-    n = ntl.test.get_network_ac_dc()
-    total_allocated_cost = allocate_cost(n).sum('sink').rename(source='bus')
-    p = ntl.power_production(n)
-    total_production_cost = weight_with_one_port_investment_cost(p, n, dim='bus')\
-                                .sum('carrier')
-    assert_allclose(total_allocated_cost, total_production_cost)
 
 

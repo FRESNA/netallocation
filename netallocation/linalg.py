@@ -21,7 +21,6 @@ def upper(df):
 def lower(df):
     return df.clip(max=0)
 
-
 def pinv(df):
     return DataArray(np.linalg.pinv(df), df.T.coords)
 
@@ -85,6 +84,13 @@ def null(df):
     dim = df.dims[-1]
     return DataArray(pd.DataFrame(sp.linalg.null_space(df), index=df.get_index(dim)),
                      dims=(dim, 'null_vectors'))
+
+
+def norm(ds, dims):
+    dims = [dims] if not isinstance(dims, list) else dims
+    for d in dims:
+        assert d in ds.dims, f'Dimension {d} not in Dataset/DataArray'
+    return ds / ds.sum([d for d in ds.dims if d not in dims])
 
 
 def diag(da, newdims=None, sparse=False):

@@ -12,6 +12,7 @@ from .utils import (reindex_by_bus_carrier, check_carriers, check_snapshots,
                     get_branches_i, split_one_ports, split_branches,
                     snapshot_weightings, split_one_ports,
                     get_as_dense_by_bus_carrier)
+from .linalg import norm
 from .convert import vip_to_p2p, virtual_patterns
 from .breakdown import expand_by_source_type
 from .grid import (Incidence, impedance, energy_production, energy_demand,
@@ -138,7 +139,11 @@ def allocate_one_port_investment_cost(ds, n, dim='source', proportional=False):
                    .reindex_like(ds, fill_value=0))
         ds = ds * scaling
 
+    # prod = power_production(n, ds.snapshot, per_carrier=True)\
+    #         .rename(bus=dim, carrier='source_carrier')
     normed = (ds / ds.sum(['snapshot', 'sink'])).fillna(0)
+
+
     attr = {'payer': dim, 'allocation': 'one_port_investment_cost'}
     return (investment_cost.reindex_like(normed, fill_value=0) * normed)\
             .assign_attrs(attr)
@@ -203,7 +208,7 @@ def allocate_branch_investment_cost(ds, n):
 
     ds = ds * scaling
 
-    normed = (ds / ds.sum(['snapshot', 'bus'])).fillna(0)
+    normed = norm(ds, 'branch').fillna(0)
     attr = {'allocation': 'branch_investment_cost'}
     return (investment_cost * normed).assign_attrs(attr)
 
