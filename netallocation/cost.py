@@ -109,39 +109,18 @@ def allocate_one_port_investment_cost(ds, n, dim='source', proportional=False):
                for c in comps), dim='carrier')
     investment_cost = (nom_opt * cap_cost).rename(bus=dim, carrier='source_carrier')
 
+    prod = power_production(n, ds.snapshot, per_carrier=True)\
+            .rename(bus=dim, carrier='source_carrier')
+
     if not proportional:
-        # 1. Empirical approach
-        # nom_bound_pu = concat([reindex_by_bus_carrier(
-        #                     get_as_dense(n, c, 'p_max_pu'), c, n)
-        #                   for c in comps], dim='carrier').rename(name='snapshot')
-        # nom_bound = nom_bound_pu * nom_opt
-
-        # at_bound = nom_bound.round(3) \
-        #            == power_production(n, per_carrier=True).round(3)
-        # at_bound = at_bound.rename(bus=dim)\
-        #                    .reindex_like(da.drop('sink'), fill_value=False)
-        # da = da.where(at_bound, 0)
-
-        # 2. Empirical approach
-        # c = 'Generator'
-        # at_bound = (get_as_dense(n, c, 'p_max_pu') * n.df(c).p_nom_opt /
-        #             n.pnl(c).p.reindex(columns=n.generators.index) <= 1.001)
-        # at_bound = (reindex_by_bus_carrier(at_bound, c, n)
-        #             .rename(name='snapshot', bus=dim)
-        #             .reindex_like(da.drop('sink'), fill_value=False))
-        # da = da.where(at_bound, 0)
-
-        # 4. Scale with binding of generator capacity
         c = 'Generator'
         mu_upper = n.pnl(c).mu_upper
         scaling = (reindex_by_bus_carrier(mu_upper/mu_upper.sum(), c, n)
-                   .rename(bus=dim, carrier='source_carrier')
-                   .reindex_like(ds, fill_value=0))
-        ds = ds * scaling
+                   .rename(bus=dim, carrier='source_carrier'))
+        prod *= scaling.reindex_like(prod, fill_value=0)
+        ds *= scaling.reindex_like(ds, fill_value=0)
 
-    # prod = power_production(n, ds.snapshot, per_carrier=True)\
-    #         .rename(bus=dim, carrier='source_carrier')
-    normed = (ds / ds.sum(['snapshot', 'sink'])).fillna(0)
+    normed = (ds / prod.sum('snapshot')).fillna(0)
 
 
     attr = {'payer': dim, 'allocation': 'one_port_investment_cost'}
@@ -195,8 +174,10 @@ def allocate_branch_investment_cost(ds, n):
     snapshots = check_snapshots(ds.snapshot, n)
     check_carriers(n)
     names=['component', 'branch_i']
-
     nom_attr = pd.Series(nominal_attrs)[np.unique(ds.component)] + '_opt'
+
+    flow = network_flow(n, ds.snapshot, branch_components=nom_attr.index)
+
     investment_cost = pd.concat({c: n.df(c).eval(f'capital_cost * {attr}')
                           for c, attr in nom_attr.items()}, names=names)
     investment_cost = DataArray(investment_cost, dims='branch')
@@ -204,11 +185,12 @@ def allocate_branch_investment_cost(ds, n):
     scaling = pd.concat({c: n.pnl(c).mu_lower.loc[snapshots]
                          + n.pnl(c).mu_upper.loc[snapshots]
                        for c in nom_attr.index}, axis=1, names=names)
-    scaling = DataArray(scaling/scaling.sum(), dims=['snapshot', 'branch'])
+    scaling = DataArray(scaling, dims=['snapshot', 'branch'])
 
     ds = ds * scaling
+    flow = flow * scaling
 
-    normed = norm(ds, 'branch').fillna(0)
+    normed = (ds / flow.sum('snapshot')).fillna(0)
     attr = {'allocation': 'branch_investment_cost'}
     return (investment_cost * normed).assign_attrs(attr)
 
@@ -381,13 +363,13 @@ def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
                                 con_i.str.contains('Limit', case=False)]
         if co2_constr_name.empty:
             logger.warning('No CO2 constraint found.')
-            return np.array(0)
+            return reindex_by_bus_carrier(pd.Series(0, n.generators.index), c, n)
         else:
             co2_constr_name = co2_constr_name[0]
     elif co2_constr_name not in n.global_constraints.index:
         logger.warning(f'Constraint {co2_constr_name} not in n.global_constraints'
                     ', setting CO₂ constraint cost to zero.')
-        return np.array(0)
+        return reindex_by_bus_carrier(pd.Series(0, n.generators.index), c, n)
     price = n.global_constraints.mu[co2_constr_name]
     eff_emission = n.df(c).carrier.map(n.carriers[co2_attr]) / n.df(c).efficiency
     return price * reindex_by_bus_carrier(eff_emission, c, n)
@@ -479,7 +461,10 @@ def allocate_cost(n, snapshots=None, method='ap', q=1, **kwargs):
         Peer-to-peer cost allocation.
 
     """
-    ds = flow_allocation(n, snapshots, method, **kwargs)
+    if isinstance(method, str):
+        ds = flow_allocation(n, snapshots, method, **kwargs)
+    else:
+        ds = method
     ds = vip_to_p2p(virtual_patterns(ds, n, q=q), n)
     ds = expand_by_source_type(ds, n)
 
@@ -494,9 +479,10 @@ def allocate_cost(n, snapshots=None, method='ap', q=1, **kwargs):
     d = dict(sink='payer', bus='payer', branch='receiver_transmission_cost',
              source='receiver_nodal_cost', source_carrier='receiver_carrier')
     def rename(da): return da.rename({k: v for k, v in d.items() if k in da.dims})
-    res = Dataset({ds.attrs['allocation']: rename(ds) for ds in
-                   [op_one_port, co2_one_port, inv_one_port,
-                    op_branch, inv_branch]})
+    res = Dataset({ds.attrs['allocation']: rename(ds)
+                   for ds in [op_one_port, co2_one_port, inv_one_port,
+                              op_branch, inv_branch]
+                   if ds.sum() != 0})
     return res
 
 
