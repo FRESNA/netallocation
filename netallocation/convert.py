@@ -6,9 +6,9 @@ allocation into each other.
 """
 import xarray as xr
 import pandas as pd
-from .utils import obj_if_acc, upper, check_dataset
+from .utils import obj_if_acc, upper, check_dataset, is_sparse
 from .grid import Incidence, self_consumption
-
+from .linalg import dot
 
 def virtual_patterns(ds, n, q=0.5):
     """
@@ -38,7 +38,7 @@ def virtual_patterns(ds, n, q=0.5):
     da = ds.peer_on_branch_to_peer if is_dataset else ds
     vfp = q * da.sum('sink').rename(source='bus') + \
           (1 - q) * da.sum('source').rename(sink='bus')
-    K = Incidence(n, vfp.get_index('branch').unique('component'))
+    K = Incidence(n, vfp.get_index('branch').unique('component'), is_sparse(ds))
     vip = K @ vfp.rename(bus='injection_pattern')
     virtuals = xr.Dataset({'virtual_flow_pattern': vfp.T,
                            'virtual_injection_pattern': vip.T})

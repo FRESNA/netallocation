@@ -1,4 +1,5 @@
 import numpy as np
+from numpy import sign
 import pandas as pd
 from pypsa.descriptors import (get_switchable_as_dense as get_as_dense,
                                get_extendable_i, get_non_extendable_i,
@@ -109,13 +110,13 @@ def allocate_one_port_investment_cost(ds, n, dim='source', proportional=False):
                for c in comps), dim='carrier')
     investment_cost = (nom_opt * cap_cost).rename(bus=dim, carrier='source_carrier')
 
-    prod = power_production(n, ds.snapshot, per_carrier=True)\
+    prod = power_production(n, per_carrier=True)\
             .rename(bus=dim, carrier='source_carrier')
 
     if not proportional:
         c = 'Generator'
         mu_upper = n.pnl(c).mu_upper
-        scaling = (reindex_by_bus_carrier(mu_upper/mu_upper.sum(), c, n)
+        scaling = (reindex_by_bus_carrier(mu_upper, c, n)
                    .rename(bus=dim, carrier='source_carrier'))
         prod *= scaling.reindex_like(prod, fill_value=0)
         ds *= scaling.reindex_like(ds, fill_value=0)
@@ -171,23 +172,21 @@ def allocate_branch_investment_cost(ds, n):
         Allocated branch cost.
 
     """
-    snapshots = check_snapshots(ds.snapshot, n)
     check_carriers(n)
     names=['component', 'branch_i']
     nom_attr = pd.Series(nominal_attrs)[np.unique(ds.component)] + '_opt'
 
-    flow = network_flow(n, ds.snapshot, branch_components=nom_attr.index)
+    flow = network_flow(n, branch_components=nom_attr.index)
 
     investment_cost = pd.concat({c: n.df(c).eval(f'capital_cost * {attr}')
                           for c, attr in nom_attr.items()}, names=names)
     investment_cost = DataArray(investment_cost, dims='branch')
 
-    scaling = pd.concat({c: n.pnl(c).mu_lower.loc[snapshots]
-                         + n.pnl(c).mu_upper.loc[snapshots]
+    scaling = pd.concat({c: n.pnl(c).mu_upper - n.pnl(c).mu_lower
                        for c in nom_attr.index}, axis=1, names=names)
     scaling = DataArray(scaling, dims=['snapshot', 'branch'])
 
-    ds = ds * scaling
+    ds = ds * scaling.reindex_like(ds)
     flow = flow * scaling
 
     normed = (ds / flow.sum('snapshot')).fillna(0)
@@ -436,7 +435,7 @@ def objective_constant(n):
     return constant
 
 
-def allocate_cost(n, snapshots=None, method='ap', q=1, **kwargs):
+def allocate_cost(n, snapshots=None, method='ap', q=0, **kwargs):
     """
     Allocate production cost based on an allocation method.
 
