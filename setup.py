@@ -15,8 +15,8 @@ setup(
     license='GPLv3',
     packages=find_packages(exclude=['doc', 'test']),
     include_package_data=True,
-    install_requires=['pypsa','pandas=>1.0', 'pyyaml', 'xarray>=0.15', 'progressbar2',
-                      'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml=>5.0',
+    install_requires=['pypsa','pandas => 1.0', 'pyyaml', 'xarray >= 0.15', 'progressbar2',
+                      'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml = >5.0',
                       'netcdf4'],
     extras_require={
         'docs': [
