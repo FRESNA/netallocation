@@ -414,7 +414,7 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
                   .sel(branch=branches_i)
             # f == H @ p
         else:
-            H = PTDF(n, branch_components).sel(bus=branches_i)
+            H = PTDF(n, branch_components).sel(branch=branches_i)
         f_wo = H.reindex(bus=buses_i).dot(p_wo, 'bus')
 
         res = Dataset({'flow_with_transit': f.sel(branch=branches_i),

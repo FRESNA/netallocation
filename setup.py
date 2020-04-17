@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='netallocation',
-    version='0.0.5',
+    version='0.0.7',
     author='Fabian Hofmann (FIAS)',
     author_email='hofmann@fias.uni-frankfurt.de',
     description='Package for allocating flows and costs in a PyPSA network',
@@ -15,8 +15,8 @@ setup(
     license='GPLv3',
     packages=find_packages(exclude=['doc', 'test']),
     include_package_data=True,
-    install_requires=['pypsa','pandas', 'pyyaml', 'xarray', 'progressbar2',
-                      'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml',
+    install_requires=['pypsa','pandas=>1.0', 'pyyaml', 'xarray>=0.15', 'progressbar2',
+                      'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml=>5.0',
                       'netcdf4'],
     extras_require={
         'docs': [

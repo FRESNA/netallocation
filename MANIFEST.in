@@ -1,2 +1,2 @@
 include netallocation/networks/*.h5
-include netallocation/package_data/*.csv
+include netallocation/package_data/*
