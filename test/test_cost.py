@@ -22,7 +22,7 @@ close = lambda d1, d2: d1.round(0) == d2.round(0)
 
 
 
-def check_duality(n, co2_constr_name=None):
+def check_duality(n):
     O = n.objective + ntl.cost.objective_constant(n)
     PR = nodal_production_revenue(n).sum()
     CO2C = nodal_co2_cost(n).sum()

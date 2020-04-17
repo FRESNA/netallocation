@@ -1,11 +1,11 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
     name='netallocation',
-    version='0.0.3',
+    version='0.0.4',
     author='Fabian Hofmann (FIAS)',
     author_email='hofmann@fias.uni-frankfurt.de',
     description='Package for allocating flows and costs in a PyPSA network',
@@ -13,6 +13,7 @@ setup(
     long_description_content_type="text/markdown",
     url='https://github.com/FRESNA/netallocation',
     license='GPLv3',
+    packages=find_packages(exclude=['doc', 'test']),
     include_package_data=True,
     install_requires=['pypsa','pandas==0.25.3', 'pyyaml', 'xarray', 'progressbar2',
                       'sparse', 'dask', 'h5py', 'scipy', 'geopandas', 'pyyaml',

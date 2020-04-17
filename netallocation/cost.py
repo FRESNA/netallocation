@@ -76,6 +76,7 @@ def allocate_co2_cost(ds, n, dim='source', co2_constr_name=None,
     ds = expand_by_source_type(ds, n, dim=dim)
     ep = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)\
           .rename(bus=dim, carrier='source_carrier')
+    ep = ep * snapshot_weightings(n, snapshots)
     attr = {'payer': dim, 'allocation': 'co2_cost'}
     return (ep * ds).assign_attrs(attr)
 

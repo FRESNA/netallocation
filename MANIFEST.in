@@ -1,0 +1,1 @@
+include netallocation/networks/*.h5
