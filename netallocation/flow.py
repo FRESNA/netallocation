@@ -232,7 +232,8 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
-                                   q=0.5, sparse=False, round=None):
+                                   direct=False, q=0.5, sparse=False,
+                                   round=None):
     """
     Perform a Equivalent Bilateral Exchanges allocation.
 
@@ -264,10 +265,10 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
     p = K @ f
-    p_plus = upper(p)
-    p_minus = lower(p)
-    p_pl = p_plus.loc[:, snapshot] # same as one-dimensional
-    p_min = p_minus.loc[:, snapshot]
+    p_plus = upper(p) if not direct else power_production(n, [snapshot]).T
+    p_minus = lower(p) if not direct else - power_demand(n, [snapshot]).T
+    p_pl = p_plus.sel(snapshot=snapshot, drop=True) # same as one-dimensional
+    p_min = p_minus.sel(snapshot=snapshot, drop=True)
     new_dims = ('bus', 'injection_pattern')
     A = dedup_axis(dot(p_minus, p_plus.T) / float(p_pl.sum()), new_dims)
     B = dedup_axis(dot(p_plus, p_minus.T) / float(p_pl.sum()), new_dims)

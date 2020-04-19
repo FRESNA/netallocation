@@ -429,7 +429,8 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
     snapshots = check_snapshots(snapshots, n)
     if 'p_plus' not in n.buses_t or update:
         prod = _one_port_attr(n, n.snapshots, attr='p')
-        n.buses_t['p_plus'] = prod.sel(carrier=(prod>=1e-8).any(['snapshot', 'bus']))\
+        n.buses_t['p_plus'] = prod.sel(carrier=(prod>=1e-8)
+                                       .any(['snapshot', 'bus']))\
                                   .clip(min=0)
     prod = n.buses_t.p_plus.sel(snapshot=snapshots)
     if not per_carrier:

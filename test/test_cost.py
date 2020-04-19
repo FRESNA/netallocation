@@ -109,7 +109,7 @@ def test_duality_with_investment_wo_CO2():
     n.generators['p_nom_min'] = 0
     n.remove('GlobalConstraint', 'co2_limit')
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-    check_duality(n, co2_constr_name='co2_limit')
+    check_duality(n)
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
 
@@ -119,7 +119,7 @@ def test_duality_with_investment():
     for c, attr in pypsa.descriptors.nominal_attrs.items():
         n.df(c)[attr] = 0
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-    check_duality(n, co2_constr_name='co2_limit')
+    check_duality(n)
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
 
@@ -129,7 +129,7 @@ def test_duality_with_investment_sn_weightings():
     n.snapshot_weightings[:] = 3
     n.global_constraints.constant *= 3
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-    check_duality(n, co2_constr_name='co2_limit')
+    check_duality(n)
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
 
@@ -150,7 +150,7 @@ def test_duality_investment_mix_ext_nonext_lines():
     n = ntl.test.get_network_ac_dc()
     n.lines.loc['0', 's_nom_extendable'] = False
     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-    check_duality(n, co2_constr_name='co2_limit')
+    check_duality(n)
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
 
