@@ -308,10 +308,10 @@ def congestion_revenue(n, snapshots=None, split=False):
         Congestion Revenue, dimension {snapshot, branch}.
 
     """
-    cr = locational_market_price_diff(n, snapshots) * \
+    cr = - locational_market_price_diff(n, snapshots) * \
          network_flow(n, snapshots) * snapshot_weightings(n, snapshots)
     if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
-        cr += cycle_constraint_cost(n, snapshots).reindex_like(cr, fill_value=0)
+        cr -= cycle_constraint_cost(n, snapshots).reindex_like(cr, fill_value=0)
     else:
         logger.warning(' The cost of cycle constraints cannot be calculated, as '
                     'the shadowprices for those are missing. Please solve the '

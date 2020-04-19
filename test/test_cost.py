@@ -28,8 +28,8 @@ def check_duality(n):
     CO2C = nodal_co2_cost(n).sum()
     DC = nodal_demand_cost(n).sum()
     CR = congestion_revenue(n, split=True).sum()
-    assert close(O, PR - CO2C - CR['ext'])
-    assert close(O, DC - CO2C + CR['fix'])
+    assert close(O, PR - CO2C + CR['ext'])
+    assert close(O, DC - CO2C - CR['fix'])
 
 
 def check_zero_profit_branches(n):
@@ -39,7 +39,7 @@ def check_zero_profit_branches(n):
                           if c in comps})[comps]\
                  .where(get_ext_branches_b(n).to_series(), 0)
     CR = congestion_revenue(n, split=True)['ext'].sum('snapshot')
-    assert all(close(cost_ext + CR, xr.zeros_like(CR))), (
+    assert all(close(cost_ext - CR, xr.zeros_like(CR))), (
         "Zero Profit condition for branches is not fulfilled.")
 
 
