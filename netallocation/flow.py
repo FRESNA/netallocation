@@ -160,7 +160,7 @@ def average_participation(n, snapshot, dims='all',
 
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
-                           sparse=False, round=None):
+                           sparse=False, round=None, direct=False):
     """
     Perform a Marginal Participation allocation.
 
@@ -210,10 +210,10 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
     p = K @ f
-    p_plus = upper(p)
-    p_minus = lower(p)
+    p_plus = upper(p) if not direct else power_production(n, [snapshot]).T
+    p_minus = lower(p) if not direct else - power_demand(n, [snapshot]).T
     new_dims = ('bus', 'injection_pattern')
-    P = diag(p.loc[:, snapshot], new_dims)
+    P = diag(p.sel(snapshot=snapshot, drop=True), new_dims)
     s = 0.5 - abs(q - 0.5)
     gamma = float(p_plus.sum())
     A = dedup_axis(dot(p_minus, p_plus.T) / gamma, new_dims)

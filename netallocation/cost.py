@@ -102,6 +102,12 @@ def allocate_one_port_investment_cost(ds, n, dim='source', proportional=False):
     """
     check_carriers(n)
     ds = expand_by_source_type(ds, n, dim=dim)
+    attrs = {'payer': dim, 'allocation': 'one_port_investment_cost'}
+    keys = {'bus': dim, 'carrier': 'source_carrier'}
+    if not proportional:
+        c = 'Generator'
+        mu_upper = reindex_by_bus_carrier(n.pnl(c).mu_upper, c, n).rename(keys)
+        return (ds * mu_upper.reindex_like(ds, fill_value=0)).assign_attrs(attrs)
 
     comps = ['Generator']
     attr = nominal_attrs
@@ -109,25 +115,12 @@ def allocate_one_port_investment_cost(ds, n, dim='source', proportional=False):
                       for c in comps], dim='carrier')
     cap_cost = concat((reindex_by_bus_carrier(n.df(c).capital_cost, c, n)
                for c in comps), dim='carrier')
-    investment_cost = (nom_opt * cap_cost).rename(bus=dim, carrier='source_carrier')
+    investment_cost = (nom_opt * cap_cost).rename(keys)
 
-    prod = power_production(n, per_carrier=True)\
-            .rename(bus=dim, carrier='source_carrier')
-
-    if not proportional:
-        c = 'Generator'
-        mu_upper = n.pnl(c).mu_upper
-        scaling = (reindex_by_bus_carrier(mu_upper, c, n)
-                   .rename(bus=dim, carrier='source_carrier'))
-        prod *= scaling.reindex_like(prod, fill_value=0)
-        ds *= scaling.reindex_like(ds, fill_value=0)
-
+    prod = power_production(n, per_carrier=True).rename(keys)
     normed = (ds / prod.sum('snapshot')).fillna(0)
-
-
-    attr = {'payer': dim, 'allocation': 'one_port_investment_cost'}
     return (investment_cost.reindex_like(normed, fill_value=0) * normed)\
-            .assign_attrs(attr)
+            .assign_attrs(attrs)
 
 
 def allocate_branch_operational_cost(ds, n):
@@ -157,7 +150,7 @@ def allocate_branch_operational_cost(ds, n):
 
 
 
-def allocate_branch_investment_cost(ds, n):
+def allocate_branch_investment_cost(ds, n, proportional=False):
     """
     Allocate the branch cost on the basis of an allocation method.
 
@@ -176,23 +169,20 @@ def allocate_branch_investment_cost(ds, n):
     check_carriers(n)
     names=['component', 'branch_i']
     nom_attr = pd.Series(nominal_attrs)[np.unique(ds.component)] + '_opt'
+    attrs = {'allocation': 'branch_investment_cost'}
+
+    if not proportional:
+        mu = pd.concat({c: n.pnl(c).mu_upper - n.pnl(c).mu_lower
+                        for c in nom_attr.index}, axis=1, names=names)
+        mu = DataArray(mu, dims=['snapshot', 'branch'])
+        return (ds * mu.reindex_like(ds)).assign_attrs(attrs)
 
     flow = network_flow(n, branch_components=nom_attr.index)
-
     investment_cost = pd.concat({c: n.df(c).eval(f'capital_cost * {attr}')
                           for c, attr in nom_attr.items()}, names=names)
     investment_cost = DataArray(investment_cost, dims='branch')
-
-    scaling = pd.concat({c: n.pnl(c).mu_upper - n.pnl(c).mu_lower
-                       for c in nom_attr.index}, axis=1, names=names)
-    scaling = DataArray(scaling, dims=['snapshot', 'branch'])
-
-    ds = ds * scaling.reindex_like(ds)
-    flow = flow * scaling
-
     normed = (ds / flow.sum('snapshot')).fillna(0)
-    attr = {'allocation': 'branch_investment_cost'}
-    return (investment_cost * normed).assign_attrs(attr)
+    return (investment_cost * normed).assign_attrs(attrs)
 
 
 

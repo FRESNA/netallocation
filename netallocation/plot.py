@@ -223,7 +223,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     return fig, (ax, ax2)
 
 
-def annotate_bus_names(n, ax, shift=-0.012, size=12, color='darkslategray',
+def annotate_bus_names(n, ax=None, shift=-0.012, size=12, color='darkslategray',
                        **kwargs):
     """
     Annotate names of buses plot.
@@ -248,6 +248,8 @@ def annotate_bus_names(n, ax, shift=-0.012, size=12, color='darkslategray',
 
     """
     kwargs.setdefault('zorder', 8)
+    if ax is None:
+        ax = plt.gca()
     for index in n.buses.index:
         x, y = n.buses.loc[index, ['x', 'y']] + shift
         text = ax.text(x, y, index, size=size, color=color, ha="center", va="center",
@@ -263,6 +265,8 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
                 .replace('branch\_i', '')
 
     kwargs.setdefault('zorder', 8)
+    if ax is None:
+        ax = plt.gca()
     branches = n.branches()
     branches = branches.assign(**{'loc0x': branches.bus0.map(n.buses.x),
                              'loc0y': branches.bus0.map(n.buses.y),

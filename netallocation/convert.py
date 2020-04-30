@@ -7,7 +7,7 @@ allocation into each other.
 import xarray as xr
 import pandas as pd
 from .utils import obj_if_acc, upper, check_dataset, is_sparse
-from .grid import Incidence, self_consumption
+from .grid import Incidence, self_consumption, power_demand
 from .linalg import dot
 
 def virtual_patterns(ds, n, q=0.5):
@@ -68,7 +68,9 @@ def vip_to_p2p(ds, n):
     vip = ds.virtual_injection_pattern
     p2p = upper(vip.rename(injection_pattern='sink', bus='source') -
                 vip.rename(injection_pattern='source', bus='sink'))
-    s = self_consumption(n, ds.snapshot)
+    # s = self_consumption(n, ds.snapshot)
+    s = power_demand(n) - p2p.sum('source').rename(sink='bus')
+
     s['bus'] = pd.MultiIndex.from_tuples([(b,b) for b in s['bus'].values],
                                          names=['source', 'sink'])
     p2p += s.unstack('bus', fill_value=0).reindex_like(p2p)
