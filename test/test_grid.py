@@ -125,6 +125,16 @@ def test_marginal_participation():
     total_flow = A.virtual_flow_pattern.sum('bus')
     assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
 
+
+def test_marginal_participation_direct():
+    sn = n.snapshots[0]
+    A = ntl.flow.flow_allocation(n, sn, method='mp', direct=True)
+    total_injection = A.virtual_injection_pattern.sum('injection_pattern')
+    assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
+    total_flow = A.virtual_flow_pattern.sum('bus')
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+
+
 def test_eqivalent_bilateral_exchanges():
     sn = n.snapshots[0]
     A = ntl.flow.flow_allocation(n, sn, method='ebe')
@@ -132,6 +142,16 @@ def test_eqivalent_bilateral_exchanges():
     assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
     total_flow = A.virtual_flow_pattern.sum('bus')
     assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+
+
+def test_eqivalent_bilateral_exchanges_direct():
+    sn = n.snapshots[0]
+    A = ntl.flow.flow_allocation(n, sn, method='ebe', direct=True)
+    total_injection = A.virtual_injection_pattern.sum('injection_pattern')
+    assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
+    total_flow = A.virtual_flow_pattern.sum('bus')
+    assert_allclose(total_flow, network_flow(n, sn), **tol_kwargs)
+
 
 def test_zbus_linear():
     sn = n_mini.snapshots

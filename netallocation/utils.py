@@ -6,6 +6,7 @@ modules.
 """
 
 import pandas as pd
+import numpy as np
 import xarray as xr
 from pypsa.geo import haversine_pts
 from pypsa.descriptors import (get_extendable_i, get_non_extendable_i,
@@ -294,13 +295,17 @@ def check_snapshots(arg, n):
     """
     Set argument to n.snapshots if None
     """
+    if arg is None:
+        return n.snapshots.rename('snapshot')
     if isinstance(arg, pd.Index):
         return arg.rename('snapshot')
     if isinstance(arg, xr.DataArray):
         if not arg.dims:
-            return arg
+            return pd.Index([arg], name='snapshot')
         return arg.to_index()
-    return n.snapshots.rename('snapshot') if arg is None else arg
+    return arg
+    # else:
+    #     return pd.Index(np.atleast_1d(arg), name='snapshot')
 
 def set_default_if_none(arg, n, attr):
     """

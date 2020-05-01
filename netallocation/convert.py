@@ -69,7 +69,7 @@ def vip_to_p2p(ds, n):
     p2p = upper(vip.rename(injection_pattern='sink', bus='source') -
                 vip.rename(injection_pattern='source', bus='sink'))
     # s = self_consumption(n, ds.snapshot)
-    s = power_demand(n) - p2p.sum('source').rename(sink='bus')
+    s = power_demand(n, ds.snapshot) - p2p.sum('source').rename(sink='bus')
 
     s['bus'] = pd.MultiIndex.from_tuples([(b,b) for b in s['bus'].values],
                                          names=['source', 'sink'])
