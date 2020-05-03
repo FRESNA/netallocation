@@ -13,8 +13,9 @@ import netallocation as ntl
 from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
                                  nodal_production_revenue, congestion_revenue,
                                  allocate_cost, locational_market_price)
-from netallocation.grid import energy_production
+from netallocation.grid import energy_production, power_demand
 from netallocation.utils import get_ext_branches_b, reindex_by_bus_carrier
+from netallocation.cost import locational_market_price, allocate_cost
 from xarray.testing import assert_allclose, assert_equal
 import xarray as xr
 from pypsa.descriptors import nominal_attrs
@@ -89,21 +90,6 @@ def test_duality_wo_investment_sn_weightings():
     check_zero_profit_branches(n)
 
 
-# TODO: This does only work when the shadow prices of the upper capacity
-# generator bound is taken into account.
-
-# def test_duality_wo_investment_2():
-#     n = ntl.test.get_network_ac_dc()
-#     n.lopf(solver_name='cbc', pyomo=False)
-#     for c, attr in pypsa.descriptors.nominal_attrs.items():
-#         n.df(c)[attr] = n.df(c)[attr + '_opt'] + 0.01
-#         n.df(c)[attr + '_extendable'] = False
-#     n.lopf(solver_name='cbc', pyomo=False, keep_shadowprices=True)
-#     check_duality(n)
-#     check_zero_profit_branches(n)
-#     check_zero_profit_generators(n)
-
-
 def test_duality_with_investment_wo_CO2():
     n = ntl.test.get_network_ac_dc()
     n.generators['p_nom_min'] = 0
@@ -133,18 +119,6 @@ def test_duality_with_investment_sn_weightings():
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
 
-# TODO: This does only work when the shadow prices of the upper capacity
-# generator bound is taken into account.
-
-# def test_duality_with_investment():
-#     n = ntl.test.get_network_ac_dc()
-#     n.generators.loc[['Manchester Wind', 'Manchester Gas'],
-#                       'p_nom_extendable'] = False
-#     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-#     check_duality(n, co2_constr_name='co2_limit')
-#     check_zero_profit_branches(n)
-#     check_zero_profit_generators(n)
-
 
 def test_duality_investment_mix_ext_nonext_lines():
     n = ntl.test.get_network_ac_dc()
@@ -155,3 +129,23 @@ def test_duality_investment_mix_ext_nonext_lines():
     check_zero_profit_generators(n)
 
 
+def test_cost_allocation():
+    n = ntl.test.get_network_ac_dc()
+    n.set_snapshots(n.snapshots[:2])
+    n.carriers = n.carriers.drop('battery')
+    n.generators['p_nom_min'] = 0
+    n.lopf(pyomo=False, keep_shadowprices=True)
+    d = power_demand(n)
+    y = locational_market_price(n)
+
+    # Set aggregated to True
+    ca = ntl.allocate_cost(n, method='ebe', aggregated=True, q=0)
+    ca = ca.sum([d for d in ca.dims if d not in ['payer', 'snapshot']])
+    ca = ca.to_array('cost').sum('cost').rename(payer='bus')
+    xr.testing.assert_allclose(ca, d * y, rtol=1e-3, atol=10)
+
+    # Set aggregated to False
+    ca = ntl.allocate_cost(n, method='ebe', aggregated=False, q=0)
+    ca = ca.sum([d for d in ca.dims if d not in ['payer', 'snapshot']])
+    ca = ca.to_array('cost').sum('cost').rename(payer='bus')
+    xr.testing.assert_allclose(ca, d * y, rtol=1e-3, atol=10)

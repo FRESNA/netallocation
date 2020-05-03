@@ -143,7 +143,7 @@ def average_participation(n, snapshot, dims='all',
 
     A = A.round(round) if round is not None else A
     res = A.to_dataset(name='peer_to_peer')\
-           .assign_attrs(method='Average Participation')
+           .assign_attrs(method='Average Participation', aggregated=aggregated)
 
     if 'branch' in dims:
         f = f_in if downstream else f_out
@@ -160,7 +160,7 @@ def average_participation(n, snapshot, dims='all',
 
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
-                           sparse=False, round=None, direct=False):
+                           sparse=False, round=None, aggregated=True):
     """
     Perform a Marginal Participation allocation.
 
@@ -201,6 +201,16 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
         If q is zero, only the impact of net load is taken into
         account. If q is one, only net generators are taken
         into account.
+    aggregated: boolean, defaut True
+        Within the aggregated coupling scheme (obtained if set to True),
+        power production and demand are 'aggregated' within the corresponding
+        bus. Therefore only the net surplus or net deficit of a bus is
+        allocated to other buses.
+        Within the direct coupling scheme (if set to False), production and
+        demand are considered independent of the bus, therefore the power
+        production and demand are allocated to all buses at the same time.
+        Even if a bus has net deficit, its power production can be
+        allocated to other buses.
     round: float, default None
         Round the resulting allocation to a given precision in decimal digits.
 
@@ -210,8 +220,8 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
     p = K @ f
-    p_plus = upper(p) if not direct else power_production(n, [snapshot]).T
-    p_minus = lower(p) if not direct else - power_demand(n, [snapshot]).T
+    p_plus = upper(p) if aggregated else power_production(n, [snapshot]).T
+    p_minus = lower(p) if aggregated else - power_demand(n, [snapshot]).T
     new_dims = ('bus', 'injection_pattern')
     P = diag(p.sel(snapshot=snapshot, drop=True), new_dims)
     s = 0.5 - abs(q - 0.5)
@@ -223,8 +233,11 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     P = (q * (upper(P) + A) + (1 - q) * (lower(P) - B)
           + s * (P + C - D)).assign_coords(snapshot = snapshot)
     F = (H @ P).rename(injection_pattern='bus')
+    attrs={'method': 'Marginal Participation', 'q': q, 'aggreated': aggregated}
+    P = P.assign_attrs(attrs)
+    F = F.assign_attrs(attrs)
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
-                  attrs={'method': 'Marginal Participation'})
+                  attrs=attrs)
     if round is not None:
         res = res.round(round).assign_attrs(res.attrs)
     return as_sparse(res) if sparse else res
@@ -232,7 +245,7 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
-                                   direct=False, q=0.5, sparse=False,
+                                   aggregated=True, q=0.5, sparse=False,
                                    round=None):
     """
     Perform a Equivalent Bilateral Exchanges allocation.
@@ -256,6 +269,16 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     branch_components : list
         Components for which the allocation should be calculated.
         The default is None, which results in n.branch_components.
+    aggregated: boolean, defaut True
+        Within the aggregated coupling scheme (obtained if set to True),
+        power production and demand are 'aggregated' within the corresponding
+        bus. Therefore only the net surplus or net deficit of a bus is
+        allocated to other buses.
+        Within the direct coupling scheme (if set to False), production and
+        demand are considered independent of the bus, therefore the power
+        production and demand are allocated to all buses at the same time.
+        Even if a bus has net deficit, its power production can be
+        allocated to other buses.
     round: float, default None
         Round the resulting allocation to a given precision in decimal digits.
 
@@ -265,8 +288,8 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
     p = K @ f
-    p_plus = upper(p) if not direct else power_production(n, [snapshot]).T
-    p_minus = lower(p) if not direct else - power_demand(n, [snapshot]).T
+    p_plus = upper(p) if aggregated else power_production(n, [snapshot]).T
+    p_minus = lower(p) if aggregated else - power_demand(n, [snapshot]).T
     p_pl = p_plus.sel(snapshot=snapshot, drop=True) # same as one-dimensional
     p_min = p_minus.sel(snapshot=snapshot, drop=True)
     new_dims = ('bus', 'injection_pattern')
@@ -275,8 +298,12 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     P = q * (A + diag(p_pl, new_dims)) + (q - 1) * (B - diag(p_min, new_dims))
     P = P.assign_coords(snapshot = snapshot)
     F = (H @ P).rename(injection_pattern='bus')
+    attrs={'method': 'Eqivalent Bilateral Exchanges', 'q': q,
+           'aggregated': aggregated}
+    P = P.assign_attrs(attrs)
+    F = F.assign_attrs(attrs)
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
-                  attrs={'method': 'Eqivalent Bilateral Exchanges'})
+                  attrs=attrs)
     if round is not None:
         res = res.round(round).assign_attrs(res.attrs)
     return as_sparse(res) if sparse else res

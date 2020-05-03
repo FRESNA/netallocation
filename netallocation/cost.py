@@ -14,7 +14,7 @@ from .utils import (reindex_by_bus_carrier, check_carriers, check_snapshots,
                     snapshot_weightings, split_one_ports,
                     get_as_dense_by_bus_carrier)
 from .linalg import norm
-from .convert import vip_to_p2p, virtual_patterns
+from .convert import peer_to_peer, virtual_patterns
 from .breakdown import expand_by_source_type
 from .grid import (Incidence, impedance, energy_production, energy_demand,
                    power_production)
@@ -168,15 +168,16 @@ def allocate_branch_investment_cost(ds, n, proportional=False):
     """
     check_carriers(n)
     names=['component', 'branch_i']
-    nom_attr = pd.Series(nominal_attrs)[np.unique(ds.component)] + '_opt'
+    comps = np.unique(ds.component)
     attrs = {'allocation': 'branch_investment_cost'}
 
     if not proportional:
-        mu = pd.concat({c: n.pnl(c).mu_upper - n.pnl(c).mu_lower
-                        for c in nom_attr.index}, axis=1, names=names)
+        mu = pd.concat({c: n.pnl(c).mu_upper - n.pnl(c).mu_lower for c in comps},
+                       axis=1, names=names)
         mu = DataArray(mu, dims=['snapshot', 'branch'])
-        return (ds * mu.reindex_like(ds)).assign_attrs(attrs)
+        return (ds * mu.reindex_like(ds, fill_value=0)).assign_attrs(attrs)
 
+    nom_attr = pd.Series(nominal_attrs)[comps] + '_opt'
     flow = network_flow(n, branch_components=nom_attr.index)
     investment_cost = pd.concat({c: n.df(c).eval(f'capital_cost * {attr}')
                           for c, attr in nom_attr.items()}, names=names)
@@ -426,7 +427,7 @@ def objective_constant(n):
     return constant
 
 
-def allocate_cost(n, snapshots=None, method='ap', q=0, **kwargs):
+def allocate_cost(n, snapshots=None, method='ap', **kwargs):
     """
     Allocate production cost based on an allocation method.
 
@@ -451,11 +452,21 @@ def allocate_cost(n, snapshots=None, method='ap', q=0, **kwargs):
         Peer-to-peer cost allocation.
 
     """
+    if 'q' in kwargs and 'aggregated' in kwargs:
+        if kwargs['q'] > 0 and not kwargs['aggregated']:
+            logger.warning('Setting parameter q != 0 with non aggregated '
+                        'coupling will results in inaccurate cost allocation.')
     if isinstance(method, str):
         ds = flow_allocation(n, snapshots, method, **kwargs)
     else:
         ds = method
-    ds = vip_to_p2p(virtual_patterns(ds, n, q=q), n)
+    was_timestep = False
+    if not ds.snapshot.shape:
+        was_timestep = True
+        ds = ds.expand_dims('snapshot')
+    # Does not seems right to hard-code q, but is only for necessary AP for now.
+    ds = virtual_patterns(ds, n, q=0)
+    ds = peer_to_peer(ds, n)
     ds = expand_by_source_type(ds, n)
 
     p2p = ds.peer_to_peer
@@ -469,10 +480,10 @@ def allocate_cost(n, snapshots=None, method='ap', q=0, **kwargs):
     d = dict(sink='payer', bus='payer', branch='receiver_transmission_cost',
              source='receiver_nodal_cost', source_carrier='receiver_carrier')
     def rename(da): return da.rename({k: v for k, v in d.items() if k in da.dims})
-    res = Dataset({ds.attrs['allocation']: rename(ds)
-                   for ds in [op_one_port, co2_one_port, inv_one_port,
+    res = Dataset({da.attrs['allocation']: rename(da)
+                   for da in [op_one_port, co2_one_port, inv_one_port,
                               op_branch, inv_branch]
-                   if ds.sum() != 0})
-    return res
+                   if da.sum() != 0})
+    return res.sel(snapshot=res.snapshot[0]) if was_timestep else res
 
 

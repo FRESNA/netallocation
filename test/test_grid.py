@@ -128,7 +128,7 @@ def test_marginal_participation():
 
 def test_marginal_participation_direct():
     sn = n.snapshots[0]
-    A = ntl.flow.flow_allocation(n, sn, method='mp', direct=True)
+    A = ntl.flow.flow_allocation(n, sn, method='mp', aggregated=False)
     total_injection = A.virtual_injection_pattern.sum('injection_pattern')
     assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
     total_flow = A.virtual_flow_pattern.sum('bus')
@@ -146,7 +146,7 @@ def test_eqivalent_bilateral_exchanges():
 
 def test_eqivalent_bilateral_exchanges_direct():
     sn = n.snapshots[0]
-    A = ntl.flow.flow_allocation(n, sn, method='ebe', direct=True)
+    A = ntl.flow.flow_allocation(n, sn, method='ebe', aggregated=False)
     total_injection = A.virtual_injection_pattern.sum('injection_pattern')
     assert_allclose(total_injection, network_injection(n, sn), **tol_kwargs)
     total_flow = A.virtual_flow_pattern.sum('bus')
