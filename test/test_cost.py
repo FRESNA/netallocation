@@ -10,17 +10,18 @@ import pytest
 import pypsa
 import pandas as pd
 import netallocation as ntl
-from  netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
-                                 nodal_production_revenue, congestion_revenue,
-                                 allocate_cost, locational_market_price)
+from netallocation.cost import (nodal_co2_cost, nodal_demand_cost,
+                                nodal_production_revenue, congestion_revenue,
+                                allocate_cost, locational_market_price)
 from netallocation.grid import energy_production, power_demand
 from netallocation.utils import get_ext_branches_b, reindex_by_bus_carrier
 from netallocation.cost import locational_market_price, allocate_cost
 from xarray.testing import assert_allclose, assert_equal
 import xarray as xr
 from pypsa.descriptors import nominal_attrs
-close = lambda d1, d2: d1.round(0) == d2.round(0)
 
+
+def close(d1, d2): return d1.round(0) == d2.round(0)
 
 
 def check_duality(n):
@@ -50,18 +51,23 @@ def check_zero_profit_generators(n):
                 .reindex(n.generators.index, fill_value=0)
     cost_inv = reindex_by_bus_carrier(cost_inv, 'Generator', n).sum('carrier')
     w = n.snapshot_weightings
-    cost_op = (n.generators_t.p * n.generators.marginal_cost).mul(w, axis=0).sum()
+    cost_op = (
+        n.generators_t.p *
+        n.generators.marginal_cost).mul(
+        w,
+        axis=0).sum()
     cost_op = reindex_by_bus_carrier(cost_op, 'Generator', n).sum('carrier')
     cost = cost_inv + cost_op
 
     PR = nodal_production_revenue(n, per_carrier=True)
     carriers = [c for c in ntl.utils.generation_carriers(n) if c in PR.carrier]
-    PR = PR.sel(carrier=carriers).sum(['carrier', 'snapshot']).reindex_like(cost)
+    PR = PR.sel(carrier=carriers).sum(
+        ['carrier', 'snapshot']).reindex_like(cost)
     CO2C = nodal_co2_cost(n).sum('snapshot')
     CO2C = CO2C.reindex_like(cost)
 
     assert all(close(cost, PR - CO2C)), ("Zero Profit "
-            "condition for generators is not fulfilled.")
+                                         "condition for generators is not fulfilled.")
 
 # reindex_by_bus_carrier(n.generators_t.mu_lower +  n.generators_t.mu_upper,
 # 'Generator', n).rename(name='snapshot') - locational_market_price(n)
@@ -134,7 +140,7 @@ def test_cost_allocation():
     n.set_snapshots(n.snapshots[:2])
     n.carriers = n.carriers.drop('battery')
     n.generators['p_nom_min'] = 0
-    n.lopf(pyomo=False, keep_shadowprices=True)
+    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
     d = power_demand(n)
     y = locational_market_price(n)
 
