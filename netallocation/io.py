@@ -7,7 +7,8 @@ Created on Mon Dec 16 12:58:09 2019
 """
 
 from .utils import obj_if_acc
-import sparse, os
+import sparse
+import os
 from pathlib import Path
 import xarray as xr
 from progressbar import ProgressBar
@@ -15,9 +16,9 @@ import logging
 from h5py import File
 import numpy as np
 
-multi_index_levels = dict(branch = ['component', 'branch_i'],
-                          production = ['source', 'source_carrier'],
-                          demand = ['sink', 'sink_carrier'])
+multi_index_levels = dict(branch=['component', 'branch_i'],
+                          production=['source', 'source_carrier'],
+                          demand=['sink', 'sink_carrier'])
 
 
 def sparse_to_h5(coo, file, name):
@@ -118,10 +119,10 @@ def read_dense_h5(file, name):
     return array
 
 
-
 coord_fn = 'coords.nc'
 sparse_fn = 'sparse_data.h5'
 dense_fn = 'dense_data.h5'
+
 
 def store_dataset(ds, folder):
     """
@@ -189,7 +190,7 @@ def load_dataset(folder):
     """
     p = Path(folder)
     ds = xr.load_dataset(p.joinpath(coord_fn))
-    set_index = {k: v for k,v in multi_index_levels.items() if k in ds.dims}
+    set_index = {k: v for k, v in multi_index_levels.items() if k in ds.dims}
     ds = ds.set_index(set_index)
     vars = [v[6:] for v in ds.attrs.keys() if v.startswith('_dim')]
     for v in vars:
@@ -199,5 +200,5 @@ def load_dataset(folder):
             data = read_sparse_h5(p.joinpath(sparse_fn), v, shape=shape)
         else:
             data = read_dense_h5(p.joinpath(dense_fn), v)
-        ds = ds.assign({v: (dims , data)})
+        ds = ds.assign({v: (dims, data)})
     return ds

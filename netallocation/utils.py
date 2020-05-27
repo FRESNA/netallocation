@@ -13,33 +13,39 @@ from pypsa.descriptors import (get_extendable_i, get_non_extendable_i,
                                nominal_attrs, get_switchable_as_dense)
 from sparse import as_coo, COO
 
+
 def upper(ds):
     "Clip all negative entries of a xr.Dataset/xr.DataArray."
     ds = obj_if_acc(ds)
     return ds.clip(min=0)
+
 
 def lower(ds):
     "Clip all positive entries of a xr.Dataset/xr.DataArray."
     ds = obj_if_acc(ds)
     return ds.clip(max=0)
 
+
 def get_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all branches in the network."
     branch_components = check_branch_comps(branch_components, n)
     return pd.concat({c: n.df(c)[[]] for c in branch_components})\
-                    .index.rename(['component', 'branch_i'])
+        .index.rename(['component', 'branch_i'])
+
 
 def get_ext_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all extendable branches in the network."
     branch_components = check_branch_comps(branch_components, n)
     return pd.Index(sum(([(c, i) for i in get_extendable_i(n, c)]
-                                 for c in branch_components), []))
+                         for c in branch_components), []))
+
 
 def get_non_ext_branches_i(n, branch_components=None):
     "Get a pd.Multiindex for all non-extendable branches in the network."
     branch_components = check_branch_comps(branch_components, n)
     return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
-                                 for c in branch_components), []))
+                         for c in branch_components), []))
+
 
 def get_ext_one_ports_i(n, per_carrier=True):
     "Get a pd.Multiindex for all extendable branches in the network."
@@ -47,9 +53,10 @@ def get_ext_one_ports_i(n, per_carrier=True):
     comps = n.one_port_components & set(nominal_attrs)
     if per_carrier:
         return pd.MultiIndex.from_frame(pd.concat(n.df(c).loc[
-                get_extendable_i(n, c), ['bus', 'carrier']] for c in comps))
+            get_extendable_i(n, c), ['bus', 'carrier']] for c in comps))
     return pd.Index(sum(([(c, i) for i in get_extendable_i(n, c)]
-                                 for c in comps), []))
+                         for c in comps), []))
+
 
 def get_non_ext_one_ports_i(n, per_carrier=True):
     "Get a pd.Multiindex for all non-extendable branches in the network."
@@ -57,19 +64,21 @@ def get_non_ext_one_ports_i(n, per_carrier=True):
     comps = n.one_port_components & set(nominal_attrs)
     if per_carrier:
         return pd.MultiIndex.from_frame(pd.concat(n.df(c).loc[
-                get_non_extendable_i(n, c), ['bus', 'carrier']] for c in comps))
+            get_non_extendable_i(n, c), ['bus', 'carrier']] for c in comps))
     return pd.Index(sum(([(c, i) for i in get_non_extendable_i(n, c)]
-                                 for c in comps), []))
+                         for c in comps), []))
+
 
 def get_ext_one_ports_b(n):
     check_carriers(n)
     gen = [reindex_by_bus_carrier(n.df(c)[attr + '_extendable'], c, n)
-           for c,attr in nominal_attrs.items() if c in n.one_port_components]
+           for c, attr in nominal_attrs.items() if c in n.one_port_components]
     return xr.concat(gen, dim='carrier').astype(bool)
+
 
 def get_ext_branches_b(n):
     ds = pd.concat({c: n.df(c)[attr + '_extendable'] for c, attr
-                   in nominal_attrs.items() if c in sorted(n.branch_components)},
+                    in nominal_attrs.items() if c in sorted(n.branch_components)},
                    names=['component', 'branch_i'])
     return xr.DataArray(ds, dims='branch')
 
@@ -94,6 +103,7 @@ def split_branches(ds, n):
 def generation_carriers(n):
     return n.generators.carrier.unique()
 
+
 def snapshot_weightings(n, snapshots=None):
     snapshots = check_snapshots(snapshots, n)
     w = n.snapshot_weightings.loc[snapshots]
@@ -102,12 +112,14 @@ def snapshot_weightings(n, snapshots=None):
     else:
         return w
 
+
 def filter_null(da, dim=None):
     "Drop all coordinates with only null/nan entries on dimensions dim."
     da = obj_if_acc(da)
     if dim is not None:
         return da.where(da != 0).dropna(dim, how='all')
     return da.where(da != 0)
+
 
 def as_sparse(ds):
     """
@@ -124,7 +136,7 @@ def as_sparse(ds):
 
     """
     ds = obj_if_acc(ds)
-    func = lambda data: COO(data) if not isinstance(data, COO) else data
+    def func(data): return COO(data) if not isinstance(data, COO) else data
     return xr.apply_ufunc(func, ds)
 
 
@@ -143,8 +155,9 @@ def as_dense(ds):
 
     """
     ds = obj_if_acc(ds)
-    func = lambda data: data.todense() if isinstance(data, COO) else data
+    def func(data): return data.todense() if isinstance(data, COO) else data
     return xr.apply_ufunc(func, ds)
+
 
 def is_sparse(ds):
     """
@@ -189,6 +202,7 @@ def obj_if_acc(obj):
     else:
         return obj
 
+
 def bus_distances(n):
     """
     Calculate the geographical distances between all buses.
@@ -228,13 +242,16 @@ def reindex_by_bus_carrier(df, c, n):
     """
     check_duplicated_carrier(n)
     if isinstance(df, pd.DataFrame):
-        df = df.rename(columns=n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
-        df.columns = pd.MultiIndex.from_tuples(df.columns, names=['bus', 'carrier'])
+        df = df.rename(columns=n.df(
+            c)[['bus', 'carrier']].apply(tuple, axis=1))
+        df.columns = pd.MultiIndex.from_tuples(
+            df.columns, names=['bus', 'carrier'])
         return xr.DataArray(df, dims=['snapshot', 'dim_1'])\
                  .unstack('dim_1', fill_value=0)
     else:
         df = df.rename(n.df(c)[['bus', 'carrier']].apply(tuple, axis=1))
-        df.index = pd.MultiIndex.from_tuples(df.index, names=['bus', 'carrier'])
+        df.index = pd.MultiIndex.from_tuples(
+            df.index, names=['bus', 'carrier'])
         return xr.DataArray(df).unstack('dim_0', fill_value=0)
 
 
@@ -264,9 +281,8 @@ def check_dataset(ds):
 
 def check_duplicated_carrier(n):
     check_carriers(n)
-    dupl = pd.Series({c: n.df(c).carrier.unique() for c in n.one_port_components
-                      if 'carrier' in n.df(c)}).explode()\
-                      [lambda ds: ds.duplicated(keep=False)].dropna()
+    dupl = pd.Series({c: n.df(c).carrier.unique() for c in n.one_port_components if 'carrier' in n.df(
+        c)}).explode()[lambda ds: ds.duplicated(keep=False)].dropna()
     assert dupl.empty, (f'The carrier name(s) {dupl.to_list()} appear in more '
                         f'than one component {dupl.index}. This will not work '
                         'when spanning the bus x carrier dimensions. Please '
@@ -291,6 +307,7 @@ def check_carriers(n):
     if 'carrier' not in n.links:
         n.links['carrier'] = n.links.bus0.map(n.buses.carrier)
 
+
 def check_snapshots(arg, n):
     """
     Set argument to n.snapshots if None
@@ -307,11 +324,13 @@ def check_snapshots(arg, n):
     # else:
     #     return pd.Index(np.atleast_1d(arg), name='snapshot')
 
+
 def set_default_if_none(arg, n, attr):
     """
     Set any argument to an attribute of n if None
     """
     return sorted(getattr(n, attr)) if arg is None else sorted(arg)
+
 
 def check_passive_branch_comps(arg, n):
     """
@@ -319,15 +338,16 @@ def check_passive_branch_comps(arg, n):
     """
     return set_default_if_none(arg, n, 'passive_branch_components')
 
+
 def check_branch_comps(arg, n):
     """
     Set argument to n.branch_components if None
     """
     return set_default_if_none(arg, n, 'branch_components')
 
+
 def check_one_port_comps(arg, n):
     """
     Set argument to n.one_port_components if None
     """
     return set_default_if_none(arg, n, 'one_port_components')
-

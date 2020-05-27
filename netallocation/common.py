@@ -28,6 +28,7 @@ class AllocationAccessor:
     from .convert import virtual_patterns, vip_to_p2p
     from .plot import chord_diagram as plot_chord_diagram
 
+
 @xr.register_dataarray_accessor("ntl")
 class AllocationAccessor:
     """

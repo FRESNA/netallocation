@@ -31,4 +31,3 @@ def trade_dependency(n, snapshots):
     snapshots = check_snapshots(snapshots, n)
     net_import = network_injection(n, snapshots).clip(max=0).sum('snapshot')
     return net_import / net_import.sum('bus')
-

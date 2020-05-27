@@ -46,7 +46,7 @@ def allocate_one_port_operational_cost(ds, n, snapshots=None, dim='source'):
     ds = expand_by_source_type(ds, n, dim=dim)
     comps = ['Generator', 'StorageUnit', 'Store']
     mc = get_as_dense_by_bus_carrier(n, 'marginal_cost', comps, snapshots)\
-         .rename(bus=dim, carrier='source_carrier')
+        .rename(bus=dim, carrier='source_carrier')
     attr = {'payer': dim, 'allocation': 'one_port_operational_cost'}
     return (mc * ds).assign_attrs(attr)
 
@@ -75,7 +75,7 @@ def allocate_co2_cost(ds, n, dim='source', co2_constr_name=None,
     check_carriers(n)
     ds = expand_by_source_type(ds, n, dim=dim)
     ep = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)\
-          .rename(bus=dim, carrier='source_carrier')
+        .rename(bus=dim, carrier='source_carrier')
     ep = ep * snapshot_weightings(n, snapshots)
     attr = {'payer': dim, 'allocation': 'co2_cost'}
     return (ep * ds).assign_attrs(attr)
@@ -107,20 +107,24 @@ def allocate_one_port_investment_cost(ds, n, dim='source', proportional=False):
     if not proportional:
         c = 'Generator'
         mu_upper = reindex_by_bus_carrier(n.pnl(c).mu_upper, c, n).rename(keys)
-        return (ds * mu_upper.reindex_like(ds, fill_value=0)).assign_attrs(attrs)
+        return (
+            ds *
+            mu_upper.reindex_like(
+                ds,
+                fill_value=0)).assign_attrs(attrs)
 
     comps = ['Generator']
     attr = nominal_attrs
     nom_opt = concat([reindex_by_bus_carrier(n.df(c)[attr[c] + "_opt"], c, n)
                       for c in comps], dim='carrier')
     cap_cost = concat((reindex_by_bus_carrier(n.df(c).capital_cost, c, n)
-               for c in comps), dim='carrier')
+                       for c in comps), dim='carrier')
     investment_cost = (nom_opt * cap_cost).rename(keys)
 
     prod = power_production(n, per_carrier=True).rename(keys)
     normed = (ds / prod.sum('snapshot')).fillna(0)
     return (investment_cost.reindex_like(normed, fill_value=0) * normed)\
-            .assign_attrs(attrs)
+        .assign_attrs(attrs)
 
 
 def allocate_branch_operational_cost(ds, n):
@@ -144,10 +148,13 @@ def allocate_branch_operational_cost(ds, n):
     branchcost_pu = pd.concat([get_as_dense(n, 'Link', 'marginal_cost', snapshots)],
                               keys=['Link'], axis=1,
                               names=['component', 'branch_i'])
-    branchcost_pu = DataArray(branchcost_pu, dims=['snapshot','branch'])
+    branchcost_pu = DataArray(branchcost_pu, dims=['snapshot', 'branch'])
     attr = {'allocation': 'branch_operational_cost'}
-    return (branchcost_pu.reindex_like(ds, fill_value=0) * ds).assign_attrs(attr)
-
+    return (
+        branchcost_pu.reindex_like(
+            ds,
+            fill_value=0) *
+        ds).assign_attrs(attr)
 
 
 def allocate_branch_investment_cost(ds, n, proportional=False):
@@ -167,24 +174,23 @@ def allocate_branch_investment_cost(ds, n, proportional=False):
 
     """
     check_carriers(n)
-    names=['component', 'branch_i']
+    names = ['component', 'branch_i']
     comps = np.unique(ds.component)
     attrs = {'allocation': 'branch_investment_cost'}
 
     if not proportional:
-        mu = pd.concat({c: n.pnl(c).mu_upper - n.pnl(c).mu_lower for c in comps},
-                       axis=1, names=names)
+        mu = pd.concat({c: n.pnl(c).mu_upper -
+                        n.pnl(c).mu_lower for c in comps}, axis=1, names=names)
         mu = DataArray(mu, dims=['snapshot', 'branch'])
         return (ds * mu.reindex_like(ds, fill_value=0)).assign_attrs(attrs)
 
     nom_attr = pd.Series(nominal_attrs)[comps] + '_opt'
     flow = network_flow(n, branch_components=nom_attr.index)
     investment_cost = pd.concat({c: n.df(c).eval(f'capital_cost * {attr}')
-                          for c, attr in nom_attr.items()}, names=names)
+                                 for c, attr in nom_attr.items()}, names=names)
     investment_cost = DataArray(investment_cost, dims='branch')
     normed = (ds / flow.sum('snapshot')).fillna(0)
     return (investment_cost * normed).assign_attrs(attrs)
-
 
 
 def allocate_carrier_attribute(ds, n, attr):
@@ -237,7 +243,6 @@ def locational_market_price(n, snapshots=None):
         return DataArray(ma, dims=['snapshot', 'bus'])
 
 
-
 def locational_market_price_diff(n, snapshots=None):
     return Incidence(n) @ locational_market_price(n, snapshots)
 
@@ -260,10 +265,13 @@ def cycle_constraint_cost(n, snapshots=None):
     """
     # Interesting fact: The cycle constraint cost are not weighted with
     # snapshot_weightings if they or not 1.
-    C = []; i = 0
+    C = []
+    i = 0
     for sub in n.sub_networks.obj:
-        coords={'branch': sub.branches().index.rename(('component', 'branch_i')),
-                'cycle': range(i, i+sub.C.shape[1])}
+        coords = {
+            'branch': sub.branches().index.rename(
+                ('component', 'branch_i')), 'cycle': range(
+                i, i + sub.C.shape[1])}
         i += sub.C.shape[1]
         C.append(DataArray(sub.C.todense(), coords, ['branch', 'cycle']))
     C = concat(C, dim='cycle').fillna(0)
@@ -300,13 +308,16 @@ def congestion_revenue(n, snapshots=None, split=False):
 
     """
     cr = - locational_market_price_diff(n, snapshots) * \
-         network_flow(n, snapshots) * snapshot_weightings(n, snapshots)
+        network_flow(n, snapshots) * snapshot_weightings(n, snapshots)
     if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
-        cr -= cycle_constraint_cost(n, snapshots).reindex_like(cr, fill_value=0)
+        cr -= cycle_constraint_cost(n,
+                                    snapshots).reindex_like(cr,
+                                                            fill_value=0)
     else:
-        logger.warning(' The cost of cycle constraints cannot be calculated, as '
-                    'the shadowprices for those are missing. Please solve the '
-                    'network with `keep_shadowprices=True` for including them.')
+        logger.warning(
+            ' The cost of cycle constraints cannot be calculated, as '
+            'the shadowprices for those are missing. Please solve the '
+            'network with `keep_shadowprices=True` for including them.')
     return split_branches(cr, n) if split else cr
 
 
@@ -324,8 +335,13 @@ def nodal_demand_cost(n, snapshots=None):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    return (energy_demand(n, snapshots) * locational_market_price(n, snapshots))\
-            .rename('nodal_demand_cost')
+    return (
+        energy_demand(
+            n,
+            snapshots) *
+        locational_market_price(
+            n,
+            snapshots)) .rename('nodal_demand_cost')
 
 
 def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
@@ -354,15 +370,18 @@ def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
                                 con_i.str.contains('Limit', case=False)]
         if co2_constr_name.empty:
             logger.warning('No CO2 constraint found.')
-            return reindex_by_bus_carrier(pd.Series(0, n.generators.index), c, n)
+            return reindex_by_bus_carrier(
+                pd.Series(0, n.generators.index), c, n)
         else:
             co2_constr_name = co2_constr_name[0]
     elif co2_constr_name not in n.global_constraints.index:
-        logger.warning(f'Constraint {co2_constr_name} not in n.global_constraints'
-                    ', setting CO₂ constraint cost to zero.')
+        logger.warning(
+            f'Constraint {co2_constr_name} not in n.global_constraints'
+            ', setting CO₂ constraint cost to zero.')
         return reindex_by_bus_carrier(pd.Series(0, n.generators.index), c, n)
     price = n.global_constraints.mu[co2_constr_name]
-    eff_emission = n.df(c).carrier.map(n.carriers[co2_attr]) / n.df(c).efficiency
+    eff_emission = n.df(c).carrier.map(
+        n.carriers[co2_attr]) / n.df(c).efficiency
     return price * reindex_by_bus_carrier(eff_emission, c, n)
 
 
@@ -392,7 +411,11 @@ def nodal_co2_cost(n, snapshots=None, co2_attr='co2_emissions',
     return cost.sum('carrier').rename('nodal_co2_cost')
 
 
-def nodal_production_revenue(n, snapshots=None, split=False, per_carrier=False):
+def nodal_production_revenue(
+        n,
+        snapshots=None,
+        split=False,
+        per_carrier=False):
     """
     Calculate the nodal production revenue per bus and snapshot.
 
@@ -409,13 +432,12 @@ def nodal_production_revenue(n, snapshots=None, split=False, per_carrier=False):
     snapshots = check_snapshots(snapshots, n)
     if split:
         pr = energy_production(n, snapshots, per_carrier=True) * \
-             locational_market_price(n, snapshots)
+            locational_market_price(n, snapshots)
         pr = split_one_ports(pr, n)
         return pr if per_carrier else pr.sum('carrier')
-    return (energy_production(n, snapshots, per_carrier=per_carrier) * \
+    return (energy_production(n, snapshots, per_carrier=per_carrier) *
             locational_market_price(n, snapshots))\
-            .rename('nodal_production_revenue')
-
+        .rename('nodal_production_revenue')
 
 
 def objective_constant(n):
@@ -454,8 +476,9 @@ def allocate_cost(n, snapshots=None, method='ap', **kwargs):
     """
     if 'q' in kwargs and 'aggregated' in kwargs:
         if kwargs['q'] > 0 and not kwargs['aggregated']:
-            logger.warning('Setting parameter q != 0 with non aggregated '
-                        'coupling will results in inaccurate cost allocation.')
+            logger.warning(
+                'Setting parameter q != 0 with non aggregated '
+                'coupling will results in inaccurate cost allocation.')
     if isinstance(method, str):
         ds = flow_allocation(n, snapshots, method, **kwargs)
     else:
@@ -464,7 +487,8 @@ def allocate_cost(n, snapshots=None, method='ap', **kwargs):
     if not ds.snapshot.shape:
         was_timestep = True
         ds = ds.expand_dims('snapshot')
-    # Does not seems right to hard-code q, but is only for necessary AP for now.
+    # Does not seems right to hard-code q, but is only for necessary AP for
+    # now.
     ds = virtual_patterns(ds, n, q=0)
     ds = peer_to_peer(ds, n)
     ds = expand_by_source_type(ds, n)
@@ -479,11 +503,11 @@ def allocate_cost(n, snapshots=None, method='ap', **kwargs):
 
     d = dict(sink='payer', bus='payer', branch='receiver_transmission_cost',
              source='receiver_nodal_cost', source_carrier='receiver_carrier')
-    def rename(da): return da.rename({k: v for k, v in d.items() if k in da.dims})
+
+    def rename(da): return da.rename(
+        {k: v for k, v in d.items() if k in da.dims})
     res = Dataset({da.attrs['allocation']: rename(da)
                    for da in [op_one_port, co2_one_port, inv_one_port,
                               op_branch, inv_branch]
                    if da.sum() != 0})
     return res.sel(snapshot=res.snapshot[0]) if was_timestep else res
-
-

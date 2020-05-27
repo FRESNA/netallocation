@@ -54,31 +54,35 @@ def chord_diagram(ds, agg='mean', minimum_quantile=0,
     import holoviews as hv
     hv.extension('matplotlib')
 
-    allocation = filter_null(as_dense(ds.peer_to_peer.mean('snapshot')), 'source')\
-                .to_series().dropna()
-    if not groups is None:
+    allocation = filter_null(
+        as_dense(
+            ds.peer_to_peer.mean('snapshot')),
+        'source') .to_series().dropna()
+    if groups is not None:
         allocation = allocation.rename(groups).sum(level=['sink', 'source'])
     allocated_buses = allocation.index.levels[0] \
-                      .append(allocation.index.levels[1]).unique()
+        .append(allocation.index.levels[1]).unique()
     bus_map = pd.Series(range(len(allocated_buses)), index=allocated_buses)
 
-    links = allocation.to_frame('value').reset_index()\
-        .replace({'source': bus_map, 'sink': bus_map})\
-        .sort_values('source').reset_index(drop=True) \
-        [lambda df: df.value >= df.value.quantile(minimum_quantile)]
+    links = allocation.to_frame('value').reset_index() .replace(
+        {
+            'source': bus_map,
+            'sink': bus_map}) .sort_values('source').reset_index(
+        drop=True)[
+                lambda df: df.value >= df.value.quantile(minimum_quantile)]
 
     nodes = pd.DataFrame({'bus': bus_map.index})
     cindex = 'index'
     ecindex = 'source'
 
-    #annoying work around to construct cycler
+    # annoying work around to construct cycler
     cmap = hv.plotting.util.process_cmap(pallette, ncolors=20)
     cmap = hv.core.options.Cycle(cmap)
     nodes = hv.Dataset(nodes, 'index')
     diagram = hv.Chord((links, nodes))
     diagram = diagram.opts(style={'cmap': cmap,
                                   'edge_cmap': cmap,
-                                  'tight':True},
+                                  'tight': True},
                            plot={'label_index': 'bus',
                                  'color_index': cindex,
                                  'edge_color_index': ecindex})
@@ -88,10 +92,12 @@ def chord_diagram(ds, agg='mean', minimum_quantile=0,
                      tight=True, tight_padding=0,
                      fig_bounds=(-.15, -.15, 1.15, 1.15),
                      hspace=0, vspace=0, fontsize=15)\
-             .initialize_plot()
+        .initialize_plot()
     return fig, fig.axes
 
-european_bounds = [-10. , 30, 36, 70]
+
+european_bounds = [-10., 30, 36, 70]
+
 
 def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                    sus_size_factor=1e4,
@@ -129,14 +135,14 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     if carrier_colors is None:
         carrier_colors = n.carriers.color
         fallback = pd.Series(n.carriers.index.str.title(), n.carriers.index)
-        carrier_names = n.carriers.nice_name.replace('', np.nan).fillna(fallback)
+        carrier_names = n.carriers.nice_name.replace(
+            '', np.nan).fillna(fallback)
 
     line_colors = {'cur': "purple", 'exp': to_hex(to_rgba("red", 0.5), True)}
     gen_sizes = n.generators.groupby(['bus', 'carrier']).p_nom_opt.sum()
     store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()
 
-
-    ## PLOT
+    # PLOT
     try:
         import cartopy.crs as ccrs
         projection = ccrs.EqualEarth()
@@ -145,27 +151,36 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
         projection = None
         logger.warn('Could not import cartopy, drawing map disabled')
 
-    fig, (ax, ax2)  = plt.subplots(1, 2, figsize=figsize,
-                                   subplot_kw={"projection":projection})
-    n.plot(bus_sizes = gen_sizes/gen_size_factor,
-           bus_colors = carrier_colors,
-           line_widths = n.lines.s_nom_min.div(linewidth_factor),
-           link_widths = n.links.p_nom_min.div(linewidth_factor),
-           line_colors = line_colors['cur'],
-           link_colors = line_colors['cur'],
-           boundaries = boundaries,
-           title = 'Generation \& Transmission Capacities',
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=figsize,
+                                  subplot_kw={"projection": projection})
+    n.plot(bus_sizes=gen_sizes / gen_size_factor,
+           bus_colors=carrier_colors,
+           line_widths=n.lines.s_nom_min.div(linewidth_factor),
+           link_widths=n.links.p_nom_min.div(linewidth_factor),
+           line_colors=line_colors['cur'],
+           link_colors=line_colors['cur'],
+           boundaries=boundaries,
+           title=r'Generation \& Transmission Capacities',
            ax=ax, **kwargs)
 
-    n.plot(bus_sizes = store_sizes/sus_size_factor,
-           bus_colors = carrier_colors,
-           line_widths = (n.lines.s_nom_opt-n.lines.s_nom_min) / linewidth_factor,
-           link_widths = (n.links.p_nom_opt-n.links.p_nom_min) / linewidth_factor,
-           line_colors = line_colors['exp'],
-           link_colors = line_colors['exp'],
-           boundaries = boundaries,
-           title = 'Storages Capacities \& Transmission Expansion',
-           ax = ax2, **kwargs)
+    n.plot(
+        bus_sizes=store_sizes /
+        sus_size_factor,
+        bus_colors=carrier_colors,
+        line_widths=(
+            n.lines.s_nom_opt -
+            n.lines.s_nom_min) /
+        linewidth_factor,
+        link_widths=(
+            n.links.p_nom_opt -
+            n.links.p_nom_min) /
+        linewidth_factor,
+        line_colors=line_colors['exp'],
+        link_colors=line_colors['exp'],
+        boundaries=boundaries,
+        title=r'Storages Capacities \& Transmission Expansion',
+        ax=ax2,
+        **kwargs)
     ax.axis('off')
 #    ax.artists[2].set_title('Carriers')
 
@@ -176,24 +191,23 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                                           projected_area_factor(axis)**2,
                                           facecolor="w", edgecolor='grey',
                                           alpha=.5)
-        labels = ["{} GW".format(int(s/1e3)) for s in reference_caps]
+        labels = ["{} GW".format(int(s / 1e3)) for s in reference_caps]
         l2 = axis.legend(handles, labels, framealpha=0.7,
-                       loc="upper left", bbox_to_anchor=(0., 1),
-                       frameon=True, #edgecolor='w',
-                       title='Capacity',
-                       handler_map = make_handler_map_to_scale_circles_as_in(axis))
+                         loc="upper left", bbox_to_anchor=(0., 1),
+                         frameon=True,  # edgecolor='w',
+                         title='Capacity',
+                         handler_map=make_handler_map_to_scale_circles_as_in(axis))
         axis.add_artist(l2)
-
 
     # LEGEND Transmission
     handles, labels = [], []
     for s in (10, 5):
-        handles.append(plt.Line2D([0],[0],color=line_colors['cur'],
-                                  linewidth=s*1e3/linewidth_factor))
+        handles.append(plt.Line2D([0], [0], color=line_colors['cur'],
+                                  linewidth=s * 1e3 / linewidth_factor))
         labels.append("/")
     for s in (10, 5):
-        handles.append(plt.Line2D([0],[0],color=line_colors['exp'],
-                                  linewidth=s*1e3/linewidth_factor))
+        handles.append(plt.Line2D([0], [0], color=line_colors['exp'],
+                                  linewidth=s * 1e3 / linewidth_factor))
         labels.append("{} GW".format(s))
 
     fig.artists.append(fig.legend(handles, labels,
@@ -204,7 +218,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
 
     # legend generation colors
     colors = carrier_colors[n.generators.carrier.unique()]
-    if not carrier_names is None:
+    if carrier_names is not None:
         colors = colors.rename(carrier_names)
     fig.artists.append(fig.legend(*handles_labels_for(colors),
                                   loc='upper left', bbox_to_anchor=(1, 1),
@@ -212,19 +226,25 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                                   title='Generation carrier'))
     # legend storage colors
     colors = carrier_colors[n.storage_units.carrier.unique()]
-    if not carrier_names is None:
+    if carrier_names is not None:
         colors = colors.rename(carrier_names)
     fig.artists.append(fig.legend(*handles_labels_for(colors),
                                   loc='upper left', bbox_to_anchor=(1, 0.45),
                                   frameon=False,
                                   title='Storage carrier'))
 
-    fig.canvas.draw(); fig.tight_layout(pad=0.5)
+    fig.canvas.draw()
+    fig.tight_layout(pad=0.5)
     return fig, (ax, ax2)
 
 
-def annotate_bus_names(n, ax=None, shift=-0.012, size=12, color='darkslategray',
-                       **kwargs):
+def annotate_bus_names(
+        n,
+        ax=None,
+        shift=-0.012,
+        size=12,
+        color='darkslategray',
+        **kwargs):
     """
     Annotate names of buses plot.
 
@@ -254,8 +274,15 @@ def annotate_bus_names(n, ax=None, shift=-0.012, size=12, color='darkslategray',
         ax = plt.gca()
     for index in n.buses.index:
         x, y = n.buses.loc[index, ['x', 'y']] + shift
-        text = ax.text(x, y, index, size=size, color=color, ha="center", va="center",
-                **kwargs)
+        text = ax.text(
+            x,
+            y,
+            index,
+            size=size,
+            color=color,
+            ha="center",
+            va="center",
+            **kwargs)
     return text
 
 
@@ -264,16 +291,16 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
     def replace_branche_names(s):
         return s.replace('Line', 'AC ').replace('Link', 'DC ')\
                 .replace('component', 'Line Type').replace('branch_i', '')\
-                .replace('branch\_i', '')
+                .replace(r'branch\_i', '')
 
     kwargs.setdefault('zorder', 8)
     if ax is None:
         ax = plt.gca()
     branches = n.branches()
     branches = branches.assign(**{'loc0x': branches.bus0.map(n.buses.x),
-                             'loc0y': branches.bus0.map(n.buses.y),
-                             'loc1x': branches.bus1.map(n.buses.x),
-                             'loc1y' : branches.bus1.map(n.buses.y)})
+                                  'loc0y': branches.bus0.map(n.buses.y),
+                                  'loc1x': branches.bus1.map(n.buses.x),
+                                  'loc1y': branches.bus1.map(n.buses.y)})
     for index in branches.index:
         loc0x, loc1x, loc0y, loc1y = \
             branches.loc[index, ['loc0x', 'loc1x', 'loc0y', 'loc1y']]
@@ -281,8 +308,13 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
             index = replace_branche_names(' '.join(index))
         else:
             index = index[1]
-        ax.text((loc0x+loc1x)/2 + shift, (loc0y+loc1y)/2 + shift, index,
-                    size=size, color=color, **kwargs)
+        ax.text(
+            (loc0x + loc1x) / 2 + shift,
+            (loc0y + loc1y) / 2 + shift,
+            index,
+            size=size,
+            color=color,
+            **kwargs)
 
 
 def injection_plot_kwargs(p):
@@ -339,39 +371,38 @@ def fact_sheet(n, fn_out=None):
         Summary of the network.
 
     """
-    efactor = 1e6 # give power in TWh
-    hfactor = n.snapshot_weightings[0] # total energy in elapsed hours
+    efactor = 1e6  # give power in TWh
+    hfactor = n.snapshot_weightings[0]  # total energy in elapsed hours
 
     carriers = n.generators.carrier
     d = pypsa.descriptors.Dict()
 
     d['Unit'] = f'10^{int(np.log10(efactor * 1e6))} Wh'
-    d['Capacity [unit * 10^3]'] = n.generators.groupby('carrier').p_nom_opt.sum()\
-        .append(n.storage_units.groupby('carrier').p_nom_opt.sum())\
-        / efactor *1e3
+    d['Capacity [unit * 10^3]'] = n.generators.groupby('carrier').p_nom_opt.sum(
+    ) .append(n.storage_units.groupby('carrier').p_nom_opt.sum()) / efactor * 1e3
     d['Total Production'] = n.generators_t.p.sum().sum() / efactor * hfactor
     d['Production per Carrier'] = n.generators_t.p.sum()\
-                                  .groupby(n.generators.carrier).sum()\
-                                  / efactor * hfactor
-    d['Rel. Production per Carrier'] = d['Production per Carrier']/\
-                                 d['Production per Carrier'].sum()
-    d['Curtailment per Carrier']  = (
+        .groupby(n.generators.carrier).sum()\
+        / efactor * hfactor
+    d['Rel. Production per Carrier'] = d['Production per Carrier'] /\
+        d['Production per Carrier'].sum()
+    d['Curtailment per Carrier'] = (
         n.generators_t.p_max_pu * n.generators.p_nom_opt -
         n.generators_t.p).dropna(axis=1).sum().groupby(carriers).sum()\
         / efactor * hfactor
-    d['Rel. Curtailment per Carrier'] = (d['Curtailment per Carrier']/\
-                                        d['Production per Carrier']).dropna()
-    d['Total Curtailment']  = d['Curtailment per Carrier'].sum()
+    d['Rel. Curtailment per Carrier'] = (d['Curtailment per Carrier'] /
+                                         d['Production per Carrier']).dropna()
+    d['Total Curtailment'] = d['Curtailment per Carrier'].sum()
     d['Rel. Curtailement'] = d['Total Curtailment'] / d['Total Production']
-    #storages
+    # storages
     d['Effective Sus Inflow'] = (n.storage_units_t.inflow.sum().sum()
-                                - n.storage_units_t.spill.sum().sum())\
-                                / efactor * hfactor
+                                 - n.storage_units_t.spill.sum().sum())\
+        / efactor * hfactor
     d['Sus Total Charging'] = - n.storage_units_t.p.clip(upper=0).sum().sum() \
-                                / efactor * hfactor
-    d['Sus Total Discharging'] = n.storage_units_t.p.clip(lower=0).sum().sum() \
-                                / efactor * hfactor
-    for k,i in d.items():
+        / efactor * hfactor
+    d['Sus Total Discharging'] = n.storage_units_t.p.clip(
+        lower=0).sum().sum() / efactor * hfactor
+    for k, i in d.items():
         i = i.to_dict() if isinstance(i, pd.Series) else i
         d[k] = i
     df = pd.Series(d).apply(pd.Series).rename(columns={0: ''}).stack()

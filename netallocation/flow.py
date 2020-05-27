@@ -10,8 +10,8 @@ Created on Wed Feb 21 12:14:49 2018
 
 from .linalg import dot
 from .grid import (self_consumption, power_demand, power_production,
-                        network_injection, network_flow, Incidence,
-                        PTDF, CISF, voltage, Ybus)
+                   network_injection, network_flow, Incidence,
+                   PTDF, CISF, voltage, Ybus)
 from .linalg import diag, inv, dedup_axis
 from .utils import (upper, lower, as_sparse, check_branch_comps,
                     check_passive_branch_comps, check_snapshots)
@@ -24,9 +24,17 @@ from progressbar import ProgressBar
 
 logger = logging.getLogger(__name__)
 
-def average_participation(n, snapshot, dims='all',
-                    branch_components=None, aggregated=True, downstream=True,
-                    include_self_consumption=True, sparse=False, round=None):
+
+def average_participation(
+        n,
+        snapshot,
+        dims='all',
+        branch_components=None,
+        aggregated=True,
+        downstream=True,
+        include_self_consumption=True,
+        sparse=False,
+        round=None):
     """
     Perform a Flow Tracing allocation.
 
@@ -107,7 +115,7 @@ def average_participation(n, snapshot, dims='all',
     f0 = network_flow(n, snapshot, branch_components)
     f1 = network_flow(n, snapshot, branch_components, ingoing=False)
     f_in = f0.where(f0 > 0, - f1)
-    f_out = f0.where(f0 < 0,  - f1)
+    f_out = f0.where(f0 < 0, - f1)
     p = network_injection(n, snapshot, branch_components)
 
     if aggregated:
@@ -115,7 +123,9 @@ def average_participation(n, snapshot, dims='all',
         p_in = upper(p).rename(bus='source')
         p_out = - lower(p).rename(bus='sink')
     else:
-        p_in = power_production(n, [snapshot]).loc[snapshot].rename(bus='source')
+        p_in = power_production(
+            n, [snapshot]).loc[snapshot].rename(
+            bus='source')
         p_out = power_demand(n, [snapshot]).loc[snapshot].rename(bus='sink')
 
     K = Incidence(n, branch_components, sparse=sparse)
@@ -147,16 +157,14 @@ def average_participation(n, snapshot, dims='all',
 
     if 'branch' in dims:
         f = f_in if downstream else f_out
-        T = dot(f * upper(K_dir.T), Q.fillna(0)) * dot(lower(K_dir.T), -R.fillna(0))
+        T = dot(f * upper(K_dir.T), Q.fillna(0)) * \
+            dot(lower(K_dir.T), -R.fillna(0))
         T = T.assign_coords(snapshot=snapshot).assign_attrs(kind=kind)
         T = T.round(round) if round is not None else T
         res = res.assign({'peer_on_branch_to_peer': T})
     if round is not None:
         res = res.round(round).assign_attrs(res.attrs)
     return res
-
-
-
 
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
@@ -231,9 +239,12 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     C = dedup_axis(dot(p_minus, p_minus.T) / gamma, new_dims)
     D = dedup_axis(dot(p_plus, p_plus.T) / gamma, new_dims)
     P = (q * (upper(P) + A) + (1 - q) * (lower(P) - B)
-          + s * (P + C - D)).assign_coords(snapshot = snapshot)
+         + s * (P + C - D)).assign_coords(snapshot=snapshot)
     F = (H @ P).rename(injection_pattern='bus')
-    attrs={'method': 'Marginal Participation', 'q': q, 'aggreated': aggregated}
+    attrs = {
+        'method': 'Marginal Participation',
+        'q': q,
+        'aggreated': aggregated}
     P = P.assign_attrs(attrs)
     F = F.assign_attrs(attrs)
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
@@ -241,7 +252,6 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     if round is not None:
         res = res.round(round).assign_attrs(res.attrs)
     return as_sparse(res) if sparse else res
-
 
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
@@ -290,16 +300,16 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     p = K @ f
     p_plus = upper(p) if aggregated else power_production(n, [snapshot]).T
     p_minus = lower(p) if aggregated else - power_demand(n, [snapshot]).T
-    p_pl = p_plus.sel(snapshot=snapshot, drop=True) # same as one-dimensional
+    p_pl = p_plus.sel(snapshot=snapshot, drop=True)  # same as one-dimensional
     p_min = p_minus.sel(snapshot=snapshot, drop=True)
     new_dims = ('bus', 'injection_pattern')
     A = dedup_axis(dot(p_minus, p_plus.T) / float(p_pl.sum()), new_dims)
     B = dedup_axis(dot(p_plus, p_minus.T) / float(p_pl.sum()), new_dims)
     P = q * (A + diag(p_pl, new_dims)) + (q - 1) * (B - diag(p_min, new_dims))
-    P = P.assign_coords(snapshot = snapshot)
+    P = P.assign_coords(snapshot=snapshot)
     F = (H @ P).rename(injection_pattern='bus')
-    attrs={'method': 'Eqivalent Bilateral Exchanges', 'q': q,
-           'aggregated': aggregated}
+    attrs = {'method': 'Eqivalent Bilateral Exchanges', 'q': q,
+             'aggregated': aggregated}
     P = P.assign_attrs(attrs)
     F = F.assign_attrs(attrs)
     res = Dataset({'virtual_injection_pattern': P, 'virtual_flow_pattern': F},
@@ -338,8 +348,8 @@ def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
     n.calculate_dependent_values()
     branch_components = check_passive_branch_comps(branch_components, n)
     snapshot = check_snapshots(snapshot, n)
-    assert 'Link' not in branch_components, ('Component "Link" cannot be '
-                'considered in Zbus flow allocation.')
+    assert 'Link' not in branch_components, (
+        'Component "Link" cannot be ' 'considered in Zbus flow allocation.')
 
     K = Incidence(n, branch_components=branch_components)
     Y = Ybus(n, branch_components, linear=linear)  # Ybus matrix
@@ -356,16 +366,16 @@ def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
 
     if linear:
         # i == network_injection(n, snapshot, branch_components=branch_components)
-        vif = H * i # which is the same as mp with q=0.5
+        vif = H * i  # which is the same as mp with q=0.5
     else:
         # real(conj(i) * v) == n.buses_t.p.loc[snapshot].T
-        vif = real( v_ * conj(H) * conj(i))
+        vif = real(v_ * conj(H) * conj(i))
     vif = vif.transpose(..., 'branch', 'bus')
     vip = K.dot(vif.rename(bus='injection_pattern'), 'branch')\
            .transpose(..., 'bus', 'injection_pattern')
     ds = Dataset({'virtual_flow_pattern': vif,
                   'virtual_injection_pattern': vip},
-                  attrs={'method': 'Zbus flow allocation'})
+                 attrs={'method': 'Zbus flow allocation'})
     if isinstance(snapshot, pd.Index):
         return ds
     return ds.assign_coords(snapshot=snapshot)
@@ -419,20 +429,25 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
         branches_i = region_branches.index
 
         K = Incidence(n, branch_components).loc[buses_i]
-        #create regional injection pattern with nodal injection at the border
-        #accounting for the cross border flow
+        # create regional injection pattern with nodal injection at the border
+        # accounting for the cross border flow
         p = (K @ f)
         # p.loc[in_region_buses] ==
         #     network_injection(n, snapshots).loc[snapshots, in_region_buses].T
 
-        #modified injection pattern without transition
+        # modified injection pattern without transition
         im = upper(p.loc[vicinity_buses])
         ex = lower(p.loc[vicinity_buses])
 
         largerImport_b = im.sum('bus') > - ex.sum('bus')
         scaleImport = (im.sum('bus') + ex.sum('bus')) / im.sum('bus')
         scaleExport = (im.sum('bus') + ex.sum('bus')) / ex.sum('bus')
-        netImOrEx = (im * scaleImport).where(largerImport_b, (ex * scaleExport))
+        netImOrEx = (
+            im *
+            scaleImport).where(
+            largerImport_b,
+            (ex *
+             scaleExport))
         p_wo = xr.concat([p.loc[in_region_buses], netImOrEx], dim='bus')\
                  .reindex(bus=buses_i).fillna(0)
 
@@ -446,23 +461,34 @@ def with_and_without_transit(n, snapshots=None, branch_components=None):
         f_wo = H.reindex(bus=buses_i).dot(p_wo, 'bus')
 
         res = Dataset({'flow_with_transit': f.sel(branch=branches_i),
-                        'flow_without_transit': f_wo})\
-                    .assign_coords(country=region)
-        return res.assign(transit_flow = res.flow_with_transit -
+                       'flow_without_transit': f_wo})\
+            .assign_coords(country=region)
+        return res.assign(transit_flow=res.flow_with_transit -
                           res.flow_without_transit)
 
     progress = ProgressBar()
-    flows = xr.concat((regional_with_and_withtout_flow(r) for r in progress(regions)),
-                      dim='country')
+    flows = xr.concat((regional_with_and_withtout_flow(r)
+                       for r in progress(regions)), dim='country')
     comps = flows.get_index('branch').unique('component')
-    loss = xr.concat((flows.sel(component=c)**2 * DataArray(n.df(c).r_pu, dims='branch_i')
-           if c in n.passive_branch_components else
-           flows.sel(component=c) * DataArray(n.df(c).efficiency, dims='branch_i')
-           for c in comps), dim=comps).stack(branch=['component', 'branch_i'])\
-           .rename_vars(flow_with_transit = 'loss_with_transit',
-                        flow_without_transit = 'loss_without_transit',
-                        transit_flow = 'transit_flow_loss')
-    return flows.merge(loss).assign_attrs(method='With-and-Without-Transit').fillna(0)
+    loss = xr.concat(
+        (flows.sel(
+            component=c)**2 *
+            DataArray(
+            n.df(c).r_pu,
+            dims='branch_i') if c in n.passive_branch_components else flows.sel(
+                component=c) *
+            DataArray(
+            n.df(c).efficiency,
+            dims='branch_i') for c in comps),
+        dim=comps).stack(
+        branch=[
+            'component',
+            'branch_i']) .rename_vars(
+        flow_with_transit='loss_with_transit',
+        flow_without_transit='loss_without_transit',
+        transit_flow='transit_flow_loss')
+    return flows.merge(loss).assign_attrs(
+        method='With-and-Without-Transit').fillna(0)
 
 
 def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
@@ -470,6 +496,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
     import pyomo.environ as pe
     from .opf import (extract_optimisation_results,
                       define_passive_branch_flows_with_kirchhoff)
+
     def fmap(f, iterable):
         # mapper for inplace functions
         for x in iterable:
@@ -495,7 +522,7 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
     m.zero_flow_con = pe.ConstraintList()
 
     for line in n.lines.index:
-#        m.solutions.load_from(n.results)
+        #        m.solutions.load_from(n.results)
         n_temp = n.copy()
         n_temp.model = m
         n_temp.mremove('Line', [line])
@@ -536,15 +563,17 @@ def marginal_welfare_contribution(n, snapshots=None, formulation='kirchhoff',
             .rename_axis('removed line')
             .rename('Network'))
 
+
 _func_dict = {'Average participation': average_participation,
-             'ap': average_participation,
-             'Marginal participation': marginal_participation,
-             'mp': marginal_participation,
-             'Equivalent bilateral exchanges': equivalent_bilateral_exchanges,
-             'ebe': equivalent_bilateral_exchanges,
-             'Zbus transmission': zbus_transmission,
-             'zbus': zbus_transmission}
+              'ap': average_participation,
+              'Marginal participation': marginal_participation,
+              'mp': marginal_participation,
+              'Equivalent bilateral exchanges': equivalent_bilateral_exchanges,
+              'ebe': equivalent_bilateral_exchanges,
+              'Zbus transmission': zbus_transmission,
+              'zbus': zbus_transmission}
 _non_sequential_funcs = [zbus_transmission, with_and_without_transit]
+
 
 def flow_allocation(n, snapshots=None, method='Average participation',
                     round_floats=8, **kwargs):
@@ -604,9 +633,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
         return _func_dict[method](n, snapshots, **kwargs)
 
     pbar = ProgressBar(prefix='Calculate allocations')
-    func = lambda sn: _func_dict[method](n, sn, **kwargs)
+    def func(sn): return _func_dict[method](n, sn, **kwargs)
     res = xr.concat((func(sn) for sn in pbar(snapshots)),
                     dim=snapshots.rename('snapshot'))
     return res
-
-

@@ -50,7 +50,7 @@ def expand_by_source_type(ds, n, chunksize=None, dim='source'):
     sns = check_snapshots(ds.snapshot, n)
     prod = power_production(n, sns, per_carrier=True)
     share = (prod / prod.sum('carrier'))\
-             .rename(bus=dim, carrier='source_carrier').fillna(0)
+        .rename(bus=dim, carrier='source_carrier').fillna(0)
     assert dim in ds.dims, f'Dimension {dim} not present in Dataset'
     expand = ds[[k for k in ds if dim in ds[k].dims]]
     if is_sparse(expand):
@@ -66,7 +66,11 @@ def expand_by_source_type(ds, n, chunksize=None, dim='source'):
         with ProgressBar():
             res = (expand.chunk(chunk) * share.chunk(chunk)).compute()
     if was_ds:
-        return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+        return res.merge(
+            ds,
+            compat='override',
+            join='left').assign_attrs(
+            ds.attrs)
     return res[list(res)[0]]
 
 
@@ -102,7 +106,7 @@ def expand_by_sink_type(ds, n, chunksize=None, dim='source'):
     sns = check_snapshots(ds.snapshot, n)
     demand = power_demand(n, sns, per_carrier=True)
     share = (demand / demand.sum('carrier'))\
-             .rename(bus=dim, carrier='sink_carrier')
+        .rename(bus=dim, carrier='sink_carrier')
     assert dim in ds.dims, f'Dimension {dim} not present in Dataset'
     expand = ds[[k for k in ds if dim in ds[k].dims]]
     if is_sparse(expand):
@@ -118,7 +122,11 @@ def expand_by_sink_type(ds, n, chunksize=None, dim='source'):
         with ProgressBar():
             res = (expand.chunk(chunk) * share.chunk(chunk)).compute()
     if was_ds:
-        return res.merge(ds, compat='override', join='left').assign_attrs(ds.attrs)
+        return res.merge(
+            ds,
+            compat='override',
+            join='left').assign_attrs(
+            ds.attrs)
     return res[list(res)[0]]
 
 

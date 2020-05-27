@@ -15,21 +15,24 @@ from .breakdown import by_carriers
 from dask.diagnostics import ProgressBar
 import logging
 
+
 def ensure_time_average(ds):
     if 'snapshot' in ds.dims:
         return ds.mean('snapshot')
     else:
         return ds
 
+
 def split_local_nonlocal_consumption(ds):
     index = pd.Index(['local', 'nonlocal'], name='consumption_type')
-    return xr.concat([local_consumption(ds), nonlocal_consumption(ds)], dim=index)
+    return xr.concat(
+        [local_consumption(ds), nonlocal_consumption(ds)], dim=index)
 
 
 def local_consumption(ds):
     ptp = ds.peer_to_peer
     if isinstance(ptp.data, COO):
-        get_index_i = lambda k: ptp.dims.index(k)
+        def get_index_i(k): return ptp.dims.index(k)
         coords = ptp.data.coords
         b = coords[get_index_i('source')] == coords[get_index_i('sink')]
         new_data = COO(coords[:, b], ptp.data.data[b], ptp.shape)
@@ -38,10 +41,11 @@ def local_consumption(ds):
     return xr.concat((ds.peer_to_peer.sel(source=b, sink=b) for b in buses),
                      dim='source')
 
+
 def nonlocal_consumption(ds):
     ptp = ds.peer_to_peer
     if isinstance(ptp.data, COO):
-        get_index_i = lambda k: ptp.dims.index(k)
+        def get_index_i(k): return ptp.dims.index(k)
         coords = ptp.data.coords
         b = coords[get_index_i('source')] != coords[get_index_i('sink')]
         new_data = COO(coords[:, b], ptp.data.data[b], ptp.shape)
@@ -69,9 +73,12 @@ def carrier_to_branch(ds, n):
 
 
 def consider_branch_extension_on_flow(ds, n, chunksize=30):
-    orig_branch_cap = xr.DataArray(dims='branch',
-            data = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
-                      keys=['Line', 'Link'], names=('component', 'branch_i')))
+    orig_branch_cap = xr.DataArray(
+        dims='branch', data=pd.concat(
+            [
+                n.lines.s_nom_min, n.links.p_nom_min], keys=[
+                'Line', 'Link'], names=(
+                    'component', 'branch_i')))
     flow = network_flow(n, snapshots=ds.get_index('snapshot'))
     vfp = ds.virtual_flow_pattern
     # first extention flow
@@ -93,8 +100,5 @@ def consider_branch_extension_on_flow(ds, n, chunksize=30):
 
     return xr.Dataset({'on_extension': extension_flow,
                        'on_original_cap': within_cap_flow},
-                      attrs = {'type': 'Extension flow allocation'
-                               f'with method: {ds.attrs["method"]}'})
-
-
-
+                      attrs={'type': 'Extension flow allocation'
+                             f'with method: {ds.attrs["method"]}'})

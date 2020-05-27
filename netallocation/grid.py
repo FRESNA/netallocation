@@ -44,7 +44,14 @@ def Incidence(n, branch_components=None, sparse=False):
     else:
         K = n.incidence_matrix(branch_components).todense()
     branches_i = get_branches_i(n, branch_components)
-    return DataArray(K, coords=(n.buses.index, branches_i), dims=['bus', 'branch'])
+    return DataArray(
+        K,
+        coords=(
+            n.buses.index,
+            branches_i),
+        dims=[
+            'bus',
+            'branch'])
 
 
 def Cycles(n, branches_i=None):
@@ -54,41 +61,46 @@ def Cycles(n, branches_i=None):
     """
     branches = pd.concat({c: n.df(c)[['bus0', 'bus1']] for c in
                           sorted(n.branch_components)})\
-                        .rename(columns={'bus0': 'source', 'bus1': 'target'})
+        .rename(columns={'bus0': 'source', 'bus1': 'target'})
     if branches_i is None:
         branches_i = branches.index.rename(['component', 'branch_i'])
     else:
         branches = branches.reindex(branches_i)
-    branches = branches.assign(index = branches_i)
+    branches = branches.assign(index=branches_i)
     branches_bus0 = branches['source']
     mgraph = nx.from_pandas_edgelist(branches, edge_attr=True,
                                      create_using=nx.MultiGraph)
     graph = nx.OrderedGraph(mgraph)
     cycles = nx.cycle_basis(graph)
-    #number of 2-edge cycles
+    # number of 2-edge cycles
     num_multi = len(mgraph.edges()) - len(graph.edges())
     C = scipy.sparse.dok_matrix((len(branches_bus0), len(cycles) + num_multi))
-    for j,cycle in enumerate(cycles):
+    for j, cycle in enumerate(cycles):
         for i, start in enumerate(cycle):
-            end = cycle[(i+1)%len(cycle)]
+            end = cycle[(i + 1) % len(cycle)]
             branch = branches_i.get_loc(graph[start][end]['index'])
             sign = +1 if branches_bus0.iat[branch] == cycle[i] else -1
             C[branch, j] += sign
-    #counter for multis
+    # counter for multis
     c = len(cycles)
-    #add multi-graph 2-edge cycles for multiple branches between same pairs of buses
-    for u,v in graph.edges():
+    # add multi-graph 2-edge cycles for multiple branches between same pairs
+    # of buses
+    for u, v in graph.edges():
         bs = list(mgraph[u][v].values())
         if len(bs) > 1:
             first = branches_i.get_loc(bs[0]['index'])
             for b in bs[1:]:
                 other = branches_i.get_loc(b['index'])
-                sign = -1 if branches_bus0.iat[other] == branches_bus0.iat[first] else +1
+                sign = - \
+                    1 if branches_bus0.iat[other] == branches_bus0.iat[first] else +1
                 C[first, c] = 1
                 C[other, c] = sign
-                c+=1
-    return DataArray(C.todense(),  {'branch': branches_i, 'cycle': range(C.shape[1])},
-                    ('branch', 'cycle'))
+                c += 1
+    return DataArray(
+        C.todense(), {
+            'branch': branches_i, 'cycle': range(
+                C.shape[1])}, ('branch', 'cycle'))
+
 
 def impedance(n, branch_components=None, snapshot=None,
               pu_system=True, linear=True, skip_pre=False):
@@ -126,7 +138,7 @@ def impedance(n, branch_components=None, snapshot=None,
         Impedance for each branch in branch_components.
 
     """
-    #standard impedance, note z must not be inf or nan
+    # standard impedance, note z must not be inf or nan
     branch_components = check_passive_branch_comps(branch_components, n)
     x = 'x_pu' if pu_system else 'x'
     r = 'r_pu' if pu_system else 'r'
@@ -137,31 +149,32 @@ def impedance(n, branch_components=None, snapshot=None,
 
     comps = sorted(set(branch_components) & n.passive_branch_components)
     if linear:
-        z = pd.concat({c: n.df(c)[x].where(n.df(c).bus0.map(n.buses.carrier) == 'AC',
-                    n.df(c)[r]) for c in comps})
+        z = pd.concat({c: n.df(c)[x].where(n.df(c).bus0.map(
+            n.buses.carrier) == 'AC', n.df(c)[r]) for c in comps})
     else:
         z = pd.concat({c: n.df(c).eval(f'{r} + 1.j * {x}') for c in comps})
     if not n.lines.empty:
         assert not np.isinf(z).any() | z.isna().any(), ('There '
-        f'seems to be a problem with your {x} or {r} values. At least one of '
-        f'these is nan or inf. Please check the values in components {comps}.')
+                                                        f'seems to be a problem with your {x} or {r} values. At least one of '
+                                                        f'these is nan or inf. Please check the values in components {comps}.')
     z = DataArray(z.rename_axis(['component', 'branch_i']), dims='branch')
 
-    if ('Link' not in branch_components) | n.links.empty :
+    if ('Link' not in branch_components) | n.links.empty:
         return z
 
     # add pseudo impedance for links, in dependence on the current flow:
     if snapshot is None:
         logger.warn('Link in argument "branch_components", but no '
-                        'snapshot given. Falling back to first snapshot')
+                    'snapshot given. Falling back to first snapshot')
         snapshot = n.snapshots[0]
 
     f = network_flow(n, snapshot)
     branches_i = f.get_index('branch')
     C = Cycles(n, branches_i[abs(f).values > 1e-8])\
-            .reindex(branch=branches_i, fill_value=0)
+        .reindex(branch=branches_i, fill_value=0)
     # C_mix is all the active cycles where at least one link is included
-    C_mix = C[:, ((C != 0) & (f != 0)).groupby('component').any().loc['Link'].values]
+    C_mix = C[:, ((C != 0) & (f != 0)).groupby(
+        'component').any().loc['Link'].values]
 
     if not C_mix.size:
         sub = f.loc['Link'][abs(f.loc['Link']).values > 1e-8]
@@ -171,13 +184,14 @@ def impedance(n, branch_components=None, snapshot=None,
     else:
         d = {'branch': 'Link'}
         omega = - dot(pinv(dot(C_mix.loc['Link'].T, diag(f.loc['Link']))),
-           dot(C_mix.drop_sel(d).T, diag(z), f.drop_sel(d)))
+                      dot(C_mix.drop_sel(d).T, diag(z), f.drop_sel(d)))
 
-    omega = omega.round(10).assign_coords({'component':'Link'})
+    omega = omega.round(10).assign_coords({'component': 'Link'})
     omega[(omega == 0) & (f.loc['Link'] != 0)] = 1
     Z = z.reindex_like(f).copy()
     Z.loc['Link'] = omega.reindex_like(f.loc['Link'], fill_value=0)
     return Z.assign_coords(snapshot=snapshot)
+
 
 def admittance(n, branch_components=None, snapshot=None,
                pu_system=True, linear=True):
@@ -185,7 +199,7 @@ def admittance(n, branch_components=None, snapshot=None,
     Calculate the series admittance. This is the inverse of the impedance,
     see :func:`impedance` for further information.
     """
-    y = 1/impedance(n, branch_components, snapshot, pu_system, linear)
+    y = 1 / impedance(n, branch_components, snapshot, pu_system, linear)
     return y.where(~np.isinf(y), 0)
 
 
@@ -195,7 +209,8 @@ def series_shunt_admittance(n, pu_system=True, branch_components=None):
     g, b = ('g_pu', 'b_pu') if pu_system else ('g', 'b')
     shunt = pd.concat({c.name: c.df[g].fillna(0) + 1.j * c.df[b].fillna(0)
                        for c in n.iterate_components(branch_components)})
-    return DataArray(shunt.rename_axis(['component', 'branch_i']), dims='branch')
+    return DataArray(shunt.rename_axis(
+        ['component', 'branch_i']), dims='branch')
 
 
 def shunt_admittance(n, pu_system=True, branch_components=None):
@@ -208,12 +223,18 @@ def shunt_admittance(n, pu_system=True, branch_components=None):
     K = Incidence(n, branch_components=branch_components)
     series_shunt = series_shunt_admittance(n, pu_system)
     nodal_shunt = n.shunt_impedances.fillna(0).groupby('bus').sum()\
-                    .eval(f'{g} + 1.j * {b}')\
-                    .reindex(n.buses.index, fill_value=0)
+        .eval(f'{g} + 1.j * {b}')\
+        .reindex(n.buses.index, fill_value=0)
     nodal_shunt = DataArray(nodal_shunt, dims='bus')
     return 0.5 * abs(K) @ series_shunt + nodal_shunt
 
-def PTDF(n, branch_components=None, snapshot=None, pu_system=True, update=True):
+
+def PTDF(
+        n,
+        branch_components=None,
+        snapshot=None,
+        pu_system=True,
+        update=True):
     """
     Calculate the Power Tranfer Distribution Factors (PTDF)
 
@@ -243,7 +264,13 @@ def CISF(n, branch_components=None, pu_system=True):
     Z = Zbus(n, branch_components, pu_system=pu_system, linear=False)
     return dot(diag(y), K.T, Z)
 
-def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
+
+def Ybus(
+        n,
+        branch_components=None,
+        snapshot=None,
+        pu_system=True,
+        linear=True):
     """
     Calculate the Ybub matrix (or weighited Laplacian) for a given network for
     given branch_components.
@@ -273,7 +300,7 @@ def Ybus(n, branch_components=None, snapshot=None, pu_system=True, linear=True):
             sub.calculate_PTDF()
             sub.calculate_Y()
             return pd.DataFrame(sub.Y.todense(), index=sub.buses_o,
-                             columns=sub.buses_o)
+                                columns=sub.buses_o)
         return n.sub_networks.obj.apply(get_Ybus)
 
 
@@ -292,6 +319,7 @@ def Zbus(n, branch_components=None, snapshot=None,
     return pinv(Ybus(n, branch_components=branch_components,
                      snapshot=snapshot,
                      pu_system=pu_system, linear=linear))
+
 
 def voltage(n, snapshots=None, linear=True, pu_system=True):
     """
@@ -313,7 +341,7 @@ def voltage(n, snapshots=None, linear=True, pu_system=True):
         return DataArray(v.T.reindex(n.buses.index), dims=['bus', 'snapshot'])
     else:
         return DataArray(v.reindex(n.buses.index), dims='bus')\
-                .assign_coords(snapshot=snapshots)
+            .assign_coords(snapshot=snapshots)
 
 
 def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
@@ -328,13 +356,13 @@ def network_flow(n, snapshots=None, branch_components=None, ingoing=True,
     comps = check_branch_comps(branch_components, n)
     p = 'p0' if ingoing else 'p1'
     axis = int(isinstance(snapshots, (list, pd.Index)))
-    f = pd.concat({b: n.pnl(b)[p].loc[snapshots, n.df(b).index] for b in comps},
-                  axis=axis)
+    f = pd.concat({b: n.pnl(b)[p].loc[snapshots, n.df(b).index]
+                   for b in comps}, axis=axis)
     if not linear:
         q = 'q0' if ingoing else 'q1'
         pcomps = sorted(set(branch_components) & n.passive_branch_components)
-        fq = pd.concat({b: n.pnl(b)[q].loc[snapshots, n.df(b).index] for b in pcomps},
-                         axis=axis)
+        fq = pd.concat(
+            {b: n.pnl(b)[q].loc[snapshots, n.df(b).index] for b in pcomps}, axis=axis)
         f = f.add(1.j * fq, fill_value=0)
     f = f.rename_axis(['component', 'branch_i'], axis=axis)
     if axis:
@@ -364,7 +392,7 @@ def branch_outflow(n, snapshots=None, branch_components=None, linear=True):
     """
     f0 = network_flow(n, snapshots, branch_components, linear=linear).T
     f1 = network_flow(n, snapshots, branch_components, False, linear).T
-    return f0.where(f0 < 0,  - f1)
+    return f0.where(f0 < 0, - f1)
 
 
 def network_injection(n, snapshots=None, branch_components=None, linear=True):
@@ -405,6 +433,7 @@ def _one_port_attr(n, snapshots=None, attr='p', comps=None):
                                   c, n) for c in comps)
     return xr.concat(gen, dim='carrier', fill_value=0)
 
+
 def power_production(n, snapshots=None, per_carrier=False, update=False):
     """
     Calculate the gross power production per bus and optionally carrier.
@@ -429,13 +458,14 @@ def power_production(n, snapshots=None, per_carrier=False, update=False):
     snapshots = check_snapshots(snapshots, n)
     if 'p_plus' not in n.buses_t or update:
         prod = _one_port_attr(n, n.snapshots, attr='p')
-        n.buses_t['p_plus'] = prod.sel(carrier=(prod>=1e-8)
+        n.buses_t['p_plus'] = prod.sel(carrier=(prod >= 1e-8)
                                        .any(['snapshot', 'bus']))\
                                   .clip(min=0)
     prod = n.buses_t.p_plus.sel(snapshot=snapshots)
     if not per_carrier:
         prod = prod.sum('carrier')
     return prod.reindex(bus=n.buses.index, fill_value=0)
+
 
 def energy_production(n, snapshots=None, per_carrier=False, update=False):
     """
@@ -459,8 +489,11 @@ def energy_production(n, snapshots=None, per_carrier=False, update=False):
 
     """
     snapshots = check_snapshots(snapshots, n)
-    sn_weightings = DataArray(n.snapshot_weightings.loc[snapshots], dims='snapshot')
+    sn_weightings = DataArray(
+        n.snapshot_weightings.loc[snapshots],
+        dims='snapshot')
     return power_production(n, snapshots, per_carrier, update) * sn_weightings
+
 
 def power_demand(n, snapshots=None, per_carrier=False, update=False):
     """
@@ -486,8 +519,8 @@ def power_demand(n, snapshots=None, per_carrier=False, update=False):
     snapshots = check_snapshots(snapshots, n)
     if 'p_minus' not in n.buses_t or update:
         demand = _one_port_attr(n, n.snapshots)
-        n.buses_t['p_minus'] = (- demand).sel(carrier=(demand<=-1e-8)
-                                          .any(['snapshot', 'bus'])).clip(min=0)
+        n.buses_t['p_minus'] = (- demand).sel(carrier=(demand <= -
+                                                       1e-8) .any(['snapshot', 'bus'])).clip(min=0)
     demand = n.buses_t.p_minus.sel(snapshot=snapshots)
     if not per_carrier:
         demand = demand.sum('carrier')
@@ -526,8 +559,11 @@ def self_consumption(n, snapshots=None, update=False):
     """
     snapshots = check_snapshots(snapshots, n)
     if 'p_self' not in n.buses_t or update:
-        n.buses_t.p_self = (xr.concat(
-            [power_production(n, n.snapshots), power_demand(n, n.snapshots)], 'bus')
-            .groupby('bus').min().reindex(bus=n.buses.index, fill_value=0))
+        n.buses_t.p_self = (
+            xr.concat(
+                [
+                    power_production(
+                        n, n.snapshots), power_demand(
+                        n, n.snapshots)], 'bus') .groupby('bus').min().reindex(
+                bus=n.buses.index, fill_value=0))
     return n.buses_t.p_self.loc[snapshots]
-

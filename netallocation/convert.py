@@ -12,6 +12,7 @@ from .grid import Incidence, self_consumption, power_demand, power_production
 from .linalg import dot
 import warnings
 
+
 def virtual_patterns(ds, n, q=0.5):
     """
     Converts a peer-on-branch-to-peer into a virtual flow/injection pattern.
@@ -39,12 +40,15 @@ def virtual_patterns(ds, n, q=0.5):
     is_dataset = isinstance(ds, xr.Dataset)
     da = ds.peer_on_branch_to_peer if is_dataset else ds
     vfp = q * da.sum('sink').rename(source='bus') + \
-          (1 - q) * da.sum('source').rename(sink='bus')
-    K = Incidence(n, vfp.get_index('branch').unique('component'), is_sparse(ds))
+        (1 - q) * da.sum('source').rename(sink='bus')
+    K = Incidence(
+        n,
+        vfp.get_index('branch').unique('component'),
+        is_sparse(ds))
     vip = K @ vfp.rename(bus='injection_pattern')
     attrs = {'q': q}
-    virtuals = xr.Dataset({'virtual_flow_pattern': vfp.T.assign_attrs(attrs),
-                       'virtual_injection_pattern': vip.T.assign_attrs(attrs)})
+    virtuals = xr.Dataset({'virtual_flow_pattern': vfp.T.assign_attrs(
+        attrs), 'virtual_injection_pattern': vip.T.assign_attrs(attrs)})
     return ds.merge(virtuals) if is_dataset else virtuals
 
 
@@ -83,28 +87,28 @@ def peer_to_peer(ds, n, aggregated=None, q=None):
     vip = ds.virtual_injection_pattern
     if aggregated is None:
         assert 'aggregated' in vip.attrs, ('No attribute "aggregated" in '
-            '"virtual_injection_pattern". Please set it manually, or assign'
-            ' it the DataArray.' )
+                                           '"virtual_injection_pattern". Please set it manually, or assign'
+                                           ' it the DataArray.')
         aggregated = vip.attrs['aggregated']
     if not aggregated:
         assert 'q' in vip.attrs, ('No shift parameter "q" in attributes'
-                                         ' of "virtual_injection_pattern".' )
+                                  ' of "virtual_injection_pattern".')
         q = vip.attrs['q']
         p2p = vip.rename(injection_pattern='sink', bus='source')
-        s = (1-q) * power_demand(n, ds.snapshot) - \
+        s = (1 - q) * power_demand(n, ds.snapshot) - \
             q * power_production(n, ds.snapshot)
     else:
         p2p = upper(vip.rename(injection_pattern='sink', bus='source') -
                     vip.rename(injection_pattern='source', bus='sink'))
         s = self_consumption(n, ds.snapshot)
 
-    s['bus'] = pd.MultiIndex.from_tuples([(b,b) for b in s['bus'].values],
+    s['bus'] = pd.MultiIndex.from_tuples([(b, b) for b in s['bus'].values],
                                          names=['source', 'sink'])
     p2p = p2p + s.unstack('bus', fill_value=0).reindex_like(p2p)
-    return ds.assign(peer_to_peer = p2p) if was_ds else p2p
+    return ds.assign(peer_to_peer=p2p) if was_ds else p2p
 
 
 def vip_to_p2p(ds, n, direct=False):
     warnings.warn("The function 'vip_to_p2p' is deprecated, use "
-                   "'peer_to_peer' instead.", DeprecationWarning, 2)
+                  "'peer_to_peer' instead.", DeprecationWarning, 2)
     return peer_to_peer(ds, n, direct)
