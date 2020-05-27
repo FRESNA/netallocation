@@ -11,6 +11,7 @@ from .plot_helpers import make_legend_circles_for, fuel_colors, \
 from .utils import as_dense, filter_null
 from pypsa.plot import projected_area_factor
 import pandas as pd
+import xarray as xr
 import matplotlib.pyplot as plt
 import pypsa
 import numpy as np
@@ -133,8 +134,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     line_colors = {'cur': "purple", 'exp': to_hex(to_rgba("red", 0.5), True)}
     gen_sizes = n.generators.groupby(['bus', 'carrier']).p_nom_opt.sum()
     store_sizes = n.storage_units.groupby(['bus', 'carrier']).p_nom_opt.sum()
-    branch_widths = pd.concat([n.lines.s_nom_min, n.links.p_nom_min],
-                              keys=['Line', 'Link']).div(linewidth_factor)
+
 
     ## PLOT
     try:
@@ -149,20 +149,20 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                                    subplot_kw={"projection":projection})
     n.plot(bus_sizes = gen_sizes/gen_size_factor,
            bus_colors = carrier_colors,
-           line_widths = branch_widths,
-           line_colors = {'Line':line_colors['cur'], 'Link': line_colors['cur']},
+           line_widths = n.lines.s_nom_min.div(linewidth_factor),
+           link_widths = n.links.p_nom_min.div(linewidth_factor),
+           line_colors = line_colors['cur'],
+           link_colors = line_colors['cur'],
            boundaries = boundaries,
            title = 'Generation \& Transmission Capacities',
            ax=ax, **kwargs)
 
-    branch_widths = pd.concat([n.lines.s_nom_opt-n.lines.s_nom_min,
-                               n.links.p_nom_opt-n.links.p_nom_min],
-                              keys=['Line', 'Link']).div(linewidth_factor)
-
     n.plot(bus_sizes = store_sizes/sus_size_factor,
            bus_colors = carrier_colors,
-           line_widths = branch_widths,
-           line_colors = {'Line':line_colors['exp'], 'Link': line_colors['exp']},
+           line_widths = (n.lines.s_nom_opt-n.lines.s_nom_min) / linewidth_factor,
+           link_widths = (n.links.p_nom_opt-n.links.p_nom_min) / linewidth_factor,
+           line_colors = line_colors['exp'],
+           link_colors = line_colors['exp'],
            boundaries = boundaries,
            title = 'Storages Capacities \& Transmission Expansion',
            ax = ax2, **kwargs)
@@ -248,6 +248,8 @@ def annotate_bus_names(n, ax=None, shift=-0.012, size=12, color='darkslategray',
 
     """
     kwargs.setdefault('zorder', 8)
+    if kwargs.get('bbox') == 'fancy':
+        kwargs['bbox'] = dict(facecolor='white', alpha=0.5, edgecolor='None')
     if ax is None:
         ax = plt.gca()
     for index in n.buses.index:
@@ -281,6 +283,45 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
             index = index[1]
         ax.text((loc0x+loc1x)/2 + shift, (loc0y+loc1y)/2 + shift, index,
                     size=size, color=color, **kwargs)
+
+
+def injection_plot_kwargs(p):
+    '''
+    Generate keyword arguments for plotting the given injection with n.plot()
+
+    Returns kwargs which can be used in the n.plot function
+
+
+    Parameters
+    ----------
+    p : pd.Series/xr.DataArray
+        Injection pattern
+
+    Returns
+    -------
+    kwargs
+        A dictionary with keyword arguments for bus_sizes and bus_colors.
+
+    Example
+    --------
+
+    >>> p = ntl.network_injection(n, n.snapshots[0])
+    >>> n.plot(**injection_plot_kwargs(p))
+
+    '''
+    if isinstance(p, xr.DataArray):
+        p = p.to_series()
+    return dict(bus_colors=pos_neg_buscolors(p), bus_sizes=p.abs())
+
+
+def pos_neg_buscolors(p):
+    """
+    Return bus colors for positive injection (blue) and negative injection (red)
+    for a give injection pattern 'p'.
+    """
+    if isinstance(p, xr.DataArray):
+        p = p.to_series()
+    return pd.Series('indianred', p.index).where(p < 0, 'steelblue')
 
 
 def fact_sheet(n, fn_out=None):
