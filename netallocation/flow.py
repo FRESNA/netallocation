@@ -17,10 +17,12 @@ from .utils import (upper, lower, as_sparse, check_branch_comps,
                     check_passive_branch_comps, check_snapshots)
 import pandas as pd
 import xarray as xr
+import dask
 from xarray import Dataset, DataArray
 from numpy import real, conj, sign
 import logging
-from progressbar import ProgressBar
+from dask.diagnostics import ProgressBar
+# from progressbar import ProgressBar
 
 logger = logging.getLogger(__name__)
 
@@ -319,6 +321,89 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     return as_sparse(res) if sparse else res
 
 
+def post_tracing_power_flow(
+        n,
+        snapshot,
+        branch_components=None,
+        aggregated=True,
+        downstream=True,
+        include_self_consumption=True,
+        sparse=False,
+        round=9):
+    """
+    Perform a allocation.
+
+    Allocate the source and sinks in according to the method 'Average
+    participation' or 'Flow tracing'. In a second step the flow in calculated
+    by applying the PTDF to the pairs of sinks and sources
+
+    This method provides two general options:
+        Downstream:
+            The flow of each nodal power injection is traced through
+            the network and decomposed the to set of lines/buses
+            on which is flows on/to.
+        Upstream:
+            The flow of each nodal power demand is traced
+            (in reverse direction) through the network and decomposed
+            to the set of lines/buses where it comes from.
+
+    Note that only one snapshot can be calculated at a time, use
+    `flow_allocation` to calculate multiple snapshots.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        Network object with valid flow data.
+    snapshot : str, pd.Timestamp
+        Specify snapshot which should be investigated. Must be
+        in network.snapshots.
+    branch_components : list
+        Components for which the allocation should be calculated.
+        The default is None, which results in n.branch_components.
+    downstream : Boolean, default True
+        Whether to use downstream or upstream method for performing the
+        flow-tracing.
+    aggregated: boolean, defaut True
+        Within the aggregated coupling scheme (obtained if set to True),
+        power production and demand are 'aggregated' within the corresponding
+        bus. Therefore only the net surplus or net deficit of a bus is
+        allocated to other buses.
+        Within the direct coupling scheme (if set to False), production and
+        demand are considered independent of the bus, therefore the power
+        production and demand are allocated to all buses at the same time.
+        Even if a bus has net deficit, its power production can be
+        allocated to other buses.
+    include_self_consumption: boolean, default True
+        Whether to include self consumption of each buses within the aggregated
+        coupling scheme.
+    sparse: boolean, default False
+        Whether to compute the allocation with sparse arrays, this can save
+        time for large networks
+    round: float, default None
+        Round the resulting allocation to a given precision in decimal digits.
+
+    """
+    ds = average_participation(n, snapshot, dims=['source', 'sink'],
+                               branch_components=branch_components,
+                               aggregated=aggregated,
+                               downstream=downstream,
+                               include_self_consumption=False,
+                               sparse=sparse, round=round)
+    ds.attrs.update({'method': 'post_tracing_power_flow'})
+    A = ds.peer_to_peer
+    H = PTDF(n, branch_components, snapshot)
+    T = (H.rename(bus='source') - H.rename(bus='sink')) * A
+    ds = ds.assign(peer_on_branch_to_peer=T)
+
+    if aggregated and include_self_consumption:
+        selfcon = self_consumption(n, snapshot)
+        if sparse:
+            ds['peer_to_peer'] += as_sparse(diag(selfcon, ('source', 'sink')))
+        else:
+            ds['peer_to_peer'] += diag(selfcon, ('source', 'sink'))
+    return ds
+
+
 def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
                       branch_components=None):
     r"""
@@ -571,7 +656,9 @@ _func_dict = {'Average participation': average_participation,
               'Equivalent bilateral exchanges': equivalent_bilateral_exchanges,
               'ebe': equivalent_bilateral_exchanges,
               'Zbus transmission': zbus_transmission,
-              'zbus': zbus_transmission}
+              'zbus': zbus_transmission,
+              'Post tracing power flow': post_tracing_power_flow,
+              'ptpf': post_tracing_power_flow}
 _non_sequential_funcs = [zbus_transmission, with_and_without_transit]
 
 
@@ -632,8 +719,15 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     if isinstance(snapshots, (str, pd.Timestamp)) or is_nonsequetial_func:
         return _func_dict[method](n, snapshots, **kwargs)
 
-    pbar = ProgressBar(prefix='Calculate allocations')
-    def func(sn): return _func_dict[method](n, sn, **kwargs)
-    res = xr.concat((func(sn) for sn in pbar(snapshots)),
-                    dim=snapshots.rename('snapshot'))
+    logger.info('Calculate allocations')
+
+    func = _func_dict[method]
+    res = [dask.delayed(func)(n, sn, **kwargs) for sn in snapshots]
+    with ProgressBar():
+        res = xr.concat(*dask.compute(res), dim=snapshots.rename('snapshot'))
+
+    # pbar = ProgressBar(prefix='Calculate allocations')
+    # def func(sn): return _func_dict[method](n, sn, **kwargs)
+    # res = xr.concat((func(sn) for sn in pbar(snapshots)),
+    #                 dim=snapshots.rename('snapshot'))
     return res

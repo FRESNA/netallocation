@@ -269,7 +269,8 @@ def annotate_bus_names(
     """
     kwargs.setdefault('zorder', 8)
     if kwargs.get('bbox') == 'fancy':
-        kwargs['bbox'] = dict(facecolor='white', alpha=0.5, edgecolor='None')
+        kwargs['bbox'] = dict(facecolor='white', alpha=0.5, edgecolor='None',
+                              boxstyle='circle')
     if ax is None:
         ax = plt.gca()
     for index in n.buses.index:
