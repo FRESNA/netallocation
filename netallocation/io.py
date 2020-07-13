@@ -18,7 +18,9 @@ import numpy as np
 
 multi_index_levels = dict(branch=['component', 'branch_i'],
                           production=['source', 'source_carrier'],
-                          demand=['sink', 'sink_carrier'])
+                          demand=['sink', 'sink_carrier'],
+                          receiver_transmission_cost=['component', 'branch_i'],
+                          )
 
 
 def sparse_to_h5(coo, file, name):

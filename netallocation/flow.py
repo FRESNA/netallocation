@@ -21,6 +21,7 @@ import dask
 from xarray import Dataset, DataArray
 from numpy import real, conj, sign
 import logging
+from pathlib import Path
 from dask.diagnostics import ProgressBar
 # from progressbar import ProgressBar
 
@@ -36,7 +37,8 @@ def average_participation(
         downstream=True,
         include_self_consumption=True,
         sparse=False,
-        round=None):
+        round=None,
+        dask=False):
     """
     Perform a Flow Tracing allocation.
 
@@ -119,6 +121,8 @@ def average_participation(
     f_in = f0.where(f0 > 0, - f1)
     f_out = f0.where(f0 < 0, - f1)
     p = network_injection(n, snapshot, branch_components)
+    p = p.chunk(-1) if dask else p
+
 
     if aggregated:
         # nodal inflow and nodal outflow
@@ -170,7 +174,8 @@ def average_participation(
 
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
-                           sparse=False, round=None, aggregated=True):
+                           sparse=False, round=None, aggregated=True,
+                           dask=False):
     """
     Perform a Marginal Participation allocation.
 
@@ -229,6 +234,7 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
     H = PTDF(n, branch_components=branch_components, snapshot=snapshot)
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
+    f = f.chunk(-1) if dask else f
     p = K @ f
     p_plus = upper(p) if aggregated else power_production(n, [snapshot]).T
     p_minus = lower(p) if aggregated else - power_demand(n, [snapshot]).T
@@ -258,7 +264,7 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
                                    aggregated=True, q=0.5, sparse=False,
-                                   round=None):
+                                   round=None, dask=False):
     """
     Perform a Equivalent Bilateral Exchanges allocation.
 
@@ -299,6 +305,7 @@ def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
     H = PTDF(n, branch_components=branch_components, snapshot=snapshot)
     K = Incidence(n, branch_components=branch_components)
     f = network_flow(n, [snapshot], branch_components)
+    f = f.chunk(-1) if dask else f
     p = K @ f
     p_plus = upper(p) if aggregated else power_production(n, [snapshot]).T
     p_minus = lower(p) if aggregated else - power_demand(n, [snapshot]).T
@@ -329,7 +336,8 @@ def post_tracing_power_flow(
         downstream=True,
         include_self_consumption=True,
         sparse=False,
-        round=9):
+        round=9,
+        dask=False):
     """
     Perform a allocation.
 
@@ -388,7 +396,7 @@ def post_tracing_power_flow(
                                aggregated=aggregated,
                                downstream=downstream,
                                include_self_consumption=False,
-                               sparse=sparse, round=round)
+                               sparse=sparse, round=round, dask=dask)
     ds.attrs.update({'method': 'post_tracing_power_flow'})
     A = ds.peer_to_peer
     H = PTDF(n, branch_components, snapshot)
@@ -663,7 +671,7 @@ _non_sequential_funcs = [zbus_transmission, with_and_without_transit]
 
 
 def flow_allocation(n, snapshots=None, method='Average participation',
-                    round_floats=8, **kwargs):
+                    to_netcdf=None, round_floats=8, **kwargs):
     """
     Allocate or decompose the network flow with different methods.
 
@@ -726,8 +734,4 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     with ProgressBar():
         res = xr.concat(*dask.compute(res), dim=snapshots.rename('snapshot'))
 
-    # pbar = ProgressBar(prefix='Calculate allocations')
-    # def func(sn): return _func_dict[method](n, sn, **kwargs)
-    # res = xr.concat((func(sn) for sn in pbar(snapshots)),
-    #                 dim=snapshots.rename('snapshot'))
     return res

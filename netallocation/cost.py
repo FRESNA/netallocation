@@ -52,7 +52,7 @@ def allocate_one_port_operational_cost(ds, n, snapshots=None, dim='source'):
 
 
 def allocate_co2_cost(ds, n, dim='source', co2_constr_name=None,
-                      co2_attr='co2_emissions'):
+                      co2_attr='co2_emissions', co2_price=None):
     """
     Allocate CO2 emission costs on the basis of a peer-to-peer allocation.
 
@@ -62,7 +62,7 @@ def allocate_co2_cost(ds, n, dim='source', co2_constr_name=None,
         Calculated power allocation dataset, i.e. from ntl.allocate_flow.
     n : pypsa.Network
     dim : str, default 'source'
-        Dimension to whicht the production costs are associated to, (must
+        Dimension to which the production costs are associated to, (must
         contain bus names).
 
     Returns
@@ -74,7 +74,7 @@ def allocate_co2_cost(ds, n, dim='source', co2_constr_name=None,
     snapshots = check_snapshots(ds.snapshot, n)
     check_carriers(n)
     ds = expand_by_source_type(ds, n, dim=dim)
-    ep = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name)\
+    ep = nodal_co2_price(n, snapshots, co2_attr, co2_constr_name, co2_price)\
         .rename(bus=dim, carrier='source_carrier')
     ep = ep * snapshot_weightings(n, snapshots)
     attr = {'payer': dim, 'allocation': 'co2_cost'}
@@ -345,7 +345,7 @@ def nodal_demand_cost(n, snapshots=None):
 
 
 def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
-                    co2_constr_name=None):
+                    co2_constr_name=None, price=None):
     """
     Get the CO2 price per MWh_el.
 
@@ -364,22 +364,23 @@ def nodal_co2_price(n, snapshots=None, co2_attr='co2_emissions',
 
     """
     c = 'Generator'
-    if co2_constr_name is None:
-        con_i = n.global_constraints.index
-        co2_constr_name = con_i[con_i.str.contains('CO2', case=False) &
-                                con_i.str.contains('Limit', case=False)]
-        if co2_constr_name.empty:
-            logger.warning('No CO2 constraint found.')
-            return reindex_by_bus_carrier(
-                pd.Series(0, n.generators.index), c, n)
-        else:
-            co2_constr_name = co2_constr_name[0]
-    elif co2_constr_name not in n.global_constraints.index:
-        logger.warning(
-            f'Constraint {co2_constr_name} not in n.global_constraints'
-            ', setting CO₂ constraint cost to zero.')
-        return reindex_by_bus_carrier(pd.Series(0, n.generators.index), c, n)
-    price = n.global_constraints.mu[co2_constr_name]
+    if price is None:
+        if co2_constr_name is None:
+            con_i = n.global_constraints.index
+            co2_constr_name = con_i[con_i.str.contains('CO2', case=False) &
+                                    con_i.str.contains('Limit', case=False)]
+            if co2_constr_name.empty:
+                logger.warning('No CO2 constraint found.')
+                return reindex_by_bus_carrier(
+                    pd.Series(0, n.generators.index), c, n)
+            else:
+                co2_constr_name = co2_constr_name[0]
+        elif co2_constr_name not in n.global_constraints.index:
+            logger.warning(
+                f'Constraint {co2_constr_name} not in n.global_constraints'
+                ', setting CO₂ constraint cost to zero.')
+            return reindex_by_bus_carrier(pd.Series(0, n.generators.index), c, n)
+        price = n.global_constraints.mu[co2_constr_name]
     eff_emission = n.df(c).carrier.map(
         n.carriers[co2_attr]) / n.df(c).efficiency
     return price * reindex_by_bus_carrier(eff_emission, c, n)
@@ -449,7 +450,7 @@ def objective_constant(n):
     return constant
 
 
-def allocate_cost(n, snapshots=None, method='ap', **kwargs):
+def allocate_cost(n, snapshots=None, method='ap', chunksize=None, **kwargs):
     """
     Allocate production cost based on an allocation method.
 
@@ -491,12 +492,15 @@ def allocate_cost(n, snapshots=None, method='ap', **kwargs):
     # now.
     ds = virtual_patterns(ds, n, q=0)
     ds = peer_to_peer(ds, n)
-    ds = expand_by_source_type(ds, n)
+    ds = expand_by_source_type(ds, n, chunksize=chunksize)
 
     p2p = ds.peer_to_peer
     vfp = ds.virtual_flow_pattern
+
+    co2_price = kwargs.pop('co2_price', None)
+
     op_one_port = allocate_one_port_operational_cost(p2p, n)
-    co2_one_port = allocate_co2_cost(p2p, n)
+    co2_one_port = allocate_co2_cost(p2p, n, co2_price=co2_price)
     inv_one_port = allocate_one_port_investment_cost(p2p, n)
     op_branch = allocate_branch_operational_cost(vfp, n)
     inv_branch = allocate_branch_investment_cost(vfp, n)
