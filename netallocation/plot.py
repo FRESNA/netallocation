@@ -160,7 +160,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            line_colors=line_colors['cur'],
            link_colors=line_colors['cur'],
            boundaries=boundaries,
-           title=r'Generation \& Transmission Capacities',
+           title=r'Generation & Transmission Capacities',
            ax=ax, **kwargs)
 
     n.plot(
@@ -178,15 +178,15 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
         line_colors=line_colors['exp'],
         link_colors=line_colors['exp'],
         boundaries=boundaries,
-        title=r'Storages Capacities \& Transmission Expansion',
+        title=r'Storages Capacities & Transmission Expansion',
         ax=ax2,
         **kwargs)
     ax.axis('off')
 #    ax.artists[2].set_title('Carriers')
 
     # LEGEND add capcacities
+    reference_caps = [10e3, 5e3, 1e3]
     for axis, scale in zip((ax, ax2), (gen_size_factor, sus_size_factor)):
-        reference_caps = [10e3, 5e3, 1e3]
         handles = make_legend_circles_for(reference_caps, scale=scale /
                                           projected_area_factor(axis)**2,
                                           facecolor="w", edgecolor='grey',
@@ -198,6 +198,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
                          title='Capacity',
                          handler_map=make_handler_map_to_scale_circles_as_in(axis))
         axis.add_artist(l2)
+        reference_caps.pop(0)
 
     # LEGEND Transmission
     handles, labels = [], []
