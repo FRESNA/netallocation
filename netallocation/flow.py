@@ -130,8 +130,7 @@ def average_participation(
         p_out = - lower(p).rename(bus='sink')
     else:
         p_in = power_production(
-            n, [snapshot]).loc[snapshot].rename(
-            bus='source')
+            n, [snapshot]).loc[snapshot].rename(bus='source')
         p_out = power_demand(n, [snapshot]).loc[snapshot].rename(bus='sink')
 
     K = Incidence(n, branch_components, sparse=sparse)
@@ -732,6 +731,6 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     func = _func_dict[method]
     res = [dask.delayed(func)(n, sn, **kwargs) for sn in snapshots]
     with ProgressBar():
-        res = xr.concat(*dask.compute(res), dim=snapshots.rename('snapshot'))
+        res = xr.concat(dask.compute(*res), dim=snapshots.rename('snapshot'))
 
     return res

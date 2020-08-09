@@ -74,7 +74,7 @@ def expand_by_source_type(ds, n, chunksize=None, dim='source'):
     return res[list(res)[0]]
 
 
-def expand_by_sink_type(ds, n, chunksize=None, dim='source'):
+def expand_by_sink_type(ds, n, chunksize=None, dim='sink'):
     """
     Breakdown allocation into demand types, e.g. Storage carriers and Load.
 

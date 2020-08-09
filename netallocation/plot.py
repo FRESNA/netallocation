@@ -244,6 +244,7 @@ def annotate_bus_names(
         ax=None,
         shift=-0.012,
         size=12,
+        adjust_str=None,
         color='darkslategray',
         **kwargs):
     """
@@ -274,12 +275,14 @@ def annotate_bus_names(
                               boxstyle='circle')
     if ax is None:
         ax = plt.gca()
+    locs = n.buses[['x', 'y']].add(shift, axis=0)
     for index in n.buses.index:
-        x, y = n.buses.loc[index, ['x', 'y']] + shift
+        x, y = locs.loc[index]
+        string = index if adjust_str is None else adjust_str(index)
         text = ax.text(
             x,
             y,
-            index,
+            string,
             size=size,
             color=color,
             ha="center",
@@ -289,13 +292,16 @@ def annotate_bus_names(
 
 
 def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
-                          **kwargs):
+                          adjust_str=None, **kwargs):
     def replace_branche_names(s):
         return s.replace('Line', 'AC ').replace('Link', 'DC ')\
                 .replace('component', 'Line Type').replace('branch_i', '')\
                 .replace(r'branch\_i', '')
 
     kwargs.setdefault('zorder', 8)
+    if kwargs.get('bbox') == 'fancy':
+        kwargs['bbox'] = dict(facecolor='white', alpha=0.5, edgecolor='None',
+                              boxstyle='circle')
     if ax is None:
         ax = plt.gca()
     branches = n.branches()
@@ -307,7 +313,10 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
         loc0x, loc1x, loc0y, loc1y = \
             branches.loc[index, ['loc0x', 'loc1x', 'loc0y', 'loc1y']]
         if prefix:
-            index = replace_branche_names(' '.join(index))
+            if adjust_str is None:
+                index = replace_branche_names(' '.join(index))
+            else:
+                index = adjust_str(index)
         else:
             index = index[1]
         ax.text(
@@ -316,6 +325,8 @@ def annotate_branch_names(n, ax, shift=-0.012, size=12, color='k', prefix=True,
             index,
             size=size,
             color=color,
+            ha="center",
+            va="center",
             **kwargs)
 
 
