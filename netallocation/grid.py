@@ -560,10 +560,7 @@ def self_consumption(n, snapshots=None, update=False):
     snapshots = check_snapshots(snapshots, n)
     if 'p_self' not in n.buses_t or update:
         n.buses_t.p_self = (
-            xr.concat(
-                [
-                    power_production(
-                        n, n.snapshots), power_demand(
-                        n, n.snapshots)], 'bus') .groupby('bus').min().reindex(
-                bus=n.buses.index, fill_value=0))
+            xr.concat([power_production(n, n.snapshots),
+                       power_demand(n, n.snapshots)], 'bus')
+              .groupby('bus').min().reindex(bus=n.buses.index, fill_value=0))
     return n.buses_t.p_self.loc[snapshots]

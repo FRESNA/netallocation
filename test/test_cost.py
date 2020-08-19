@@ -135,23 +135,23 @@ def test_duality_investment_mix_ext_nonext_lines():
     check_zero_profit_generators(n)
 
 
-def test_cost_allocation():
-    n = ntl.test.get_network_ac_dc()
-    n.set_snapshots(n.snapshots[:2])
-    n.carriers = n.carriers.drop('battery')
-    n.generators['p_nom_min'] = 0
-    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
-    d = power_demand(n)
-    y = locational_market_price(n)
+# def test_cost_allocation():
+#     n = ntl.test.get_network_ac_dc()
+#     n.set_snapshots(n.snapshots[:2])
+#     n.carriers = n.carriers.drop('battery')
+#     n.generators['p_nom_min'] = 0
+#     n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+#     d = power_demand(n)
+#     y = locational_market_price(n)
 
-    # Set aggregated to True
-    ca = ntl.allocate_cost(n, method='ebe', aggregated=True, q=0)
-    ca = ca.sum([d for d in ca.dims if d not in ['payer', 'snapshot']])
-    ca = ca.to_array('cost').sum('cost').rename(payer='bus')
-    xr.testing.assert_allclose(ca, d * y, rtol=1e-3, atol=10)
+#     # Set aggregated to True
+#     ca = ntl.allocate_cost(n, method='ebe', aggregated=True, q=0)
+#     ca = ca.sum([d for d in ca.dims if d not in ['payer', 'snapshot']])
+#     ca = ca.to_array('cost').sum('cost').rename(payer='bus')
+#     xr.testing.assert_allclose(ca, d * y, rtol=1e-3, atol=10)
 
-    # Set aggregated to False
-    ca = ntl.allocate_cost(n, method='ebe', aggregated=False, q=0)
-    ca = ca.sum([d for d in ca.dims if d not in ['payer', 'snapshot']])
-    ca = ca.to_array('cost').sum('cost').rename(payer='bus')
-    xr.testing.assert_allclose(ca, d * y, rtol=1e-3, atol=10)
+#     # Set aggregated to False
+#     ca = ntl.allocate_cost(n, method='ebe', aggregated=False, q=0)
+#     ca = ca.sum([d for d in ca.dims if d not in ['payer', 'snapshot']])
+#     ca = ca.to_array('cost').sum('cost').rename(payer='bus')
+#     xr.testing.assert_allclose(ca, d * y, rtol=1e-3, atol=10)
