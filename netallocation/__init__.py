@@ -19,6 +19,6 @@ from .cost import allocate_cost
 from . import (utils, breakdown, grid, flow, linalg, plot, cost,
                plot_helpers, test, io, common, process, evaluate)
 
-__version__ = '0.0.7'
+__version__ = '0.0.8'
 __author__ = "Fabian Hofmann (FIAS)"
 __copyright__ = "Copyright 2015-2020 Fabian Hofmann (FIAS), GNU GPL 3"
