@@ -287,7 +287,6 @@ def cycle_constraint_cost(n, snapshots=None):
 def congestion_revenue(n, snapshots=None, split=False):
     """
     Calculate the congestion revenue (CR) per brnach and snapshot.
-
     The CR includes all costs of the transmission system. The sum over all
     snapshots of this is equal to the capital investments per branch.
 
@@ -310,7 +309,7 @@ def congestion_revenue(n, snapshots=None, split=False):
     cr = - locational_market_price_diff(n, snapshots) * \
         network_flow(n, snapshots) * snapshot_weightings(n, snapshots)
     if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
-        cr -= cycle_constraint_cost(n,
+        cr += cycle_constraint_cost(n,
                                     snapshots).reindex_like(cr,
                                                             fill_value=0)
     else:
