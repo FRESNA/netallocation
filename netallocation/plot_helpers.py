@@ -21,30 +21,30 @@ with open(filename) as f:
     config = yaml.load(f, Loader=yaml.FullLoader)
 
 
-plt.rcParams['font.size'] = 11.0
+# plt.rcParams['font.size'] = 11.0
 
-nice_names = {'offwind-ac': 'Offshore', 'offwind-dc': 'Offshore',
-              'onwind': 'Onshore',
-              'hydro': 'Hydro',
-              'ror': 'Run-of-River', 'solar': 'Solar',
-              'PHS': 'Pumped Hydro', 'H2': 'Hydrogen Storage',
-              'battery': 'Battery',
-              'OCGT': 'OCGT'}
+# nice_names = {'offwind-ac': 'Offshore', 'offwind-dc': 'Offshore',
+#               'onwind': 'Onshore',
+#               'hydro': 'Hydro',
+#               'ror': 'Run-of-River', 'solar': 'Solar',
+#               'PHS': 'Pumped Hydro', 'H2': 'Hydrogen Storage',
+#               'battery': 'Battery',
+#               'OCGT': 'OCGT'}
 
-light_gray = ".8"
-style_dict = {"axes.facecolor": "white",
-              "axes.edgecolor": light_gray,
-              "grid.color": light_gray,
+# light_gray = ".8"
+# style_dict = {"axes.facecolor": "white",
+#               "axes.edgecolor": light_gray,
+#               "grid.color": light_gray,
 
-              "axes.spines.left": True,
-              "axes.spines.bottom": True,
-              "axes.spines.right": True,
-              "axes.spines.top": True,
-              "xtick.bottom": False,
-              "ytick.left": False}
+#               "axes.spines.left": True,
+#               "axes.spines.bottom": True,
+#               "axes.spines.right": True,
+#               "axes.spines.top": True,
+#               "xtick.bottom": False,
+#               "ytick.left": False}
 
-plt.rcParams['axes.edgecolor'] = plt.rcParams['grid.color']
-plt.rcParams.update(style_dict)
+# plt.rcParams['axes.edgecolor'] = plt.rcParams['grid.color']
+# plt.rcParams.update(style_dict)
 
 fuel_colors = pd.Series(config['fuel_to_color'])
 

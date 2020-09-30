@@ -22,12 +22,13 @@ def gross_network_use(ds):
 def network_use_or_stress(ds, n):
     da = ds.virtual_flow_pattern
     f = network_flow(n, da.snapshot)
-    aligned = da.where(da * np.sign(f) >= 0, 0).sum('branch')
-    counter = da.where(da * np.sign(f) <= 0, 0).sum('branch')
-    return (abs(aligned) - abs(counter)) / abs(f).sum('branch')
+    return (np.sign(f) * da).sum('branch') / abs(f).sum('branch')
+    # aligned = da.where(da * np.sign(f) >= 0, 0).sum('branch')
+    # counter = da.where(da * np.sign(f) <= 0, 0).sum('branch')
+    # return (abs(aligned) - abs(counter)) / abs(f).sum('branch')
 
 
 def trade_dependency(n, snapshots):
     snapshots = check_snapshots(snapshots, n)
-    net_import = network_injection(n, snapshots).clip(max=0).sum('snapshot')
-    return net_import / net_import.sum('bus')
+    trade = abs(network_injection(n, snapshots)).sum('snapshot')
+    return trade / trade.sum('bus')

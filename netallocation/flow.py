@@ -38,7 +38,8 @@ def average_participation(
         include_self_consumption=True,
         sparse=False,
         round=None,
-        dask=False):
+        dask=False,
+        **kwargs):
     """
     Perform a Flow Tracing allocation.
 
@@ -174,7 +175,7 @@ def average_participation(
 
 def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
                            sparse=False, round=None, aggregated=True,
-                           dask=False):
+                           dask=False, **kwargs):
     """
     Perform a Marginal Participation allocation.
 
@@ -263,7 +264,7 @@ def marginal_participation(n, snapshot=None, q=0.5, branch_components=None,
 
 def equivalent_bilateral_exchanges(n, snapshot=None, branch_components=None,
                                    aggregated=True, q=0.5, sparse=False,
-                                   round=None, dask=False):
+                                   round=None, dask=False, **kwargs):
     """
     Perform a Equivalent Bilateral Exchanges allocation.
 
@@ -336,7 +337,8 @@ def post_tracing_power_flow(
         include_self_consumption=True,
         sparse=False,
         round=9,
-        dask=False):
+        dask=False,
+        **kwargs):
     """
     Perform a allocation.
 
@@ -412,7 +414,7 @@ def post_tracing_power_flow(
 
 
 def zbus_transmission(n, snapshot=None, linear=True, downstream=None,
-                      branch_components=None):
+                      branch_components=None, **kwargs):
     r"""
     Perform a Zbus Transmission allocation.
 

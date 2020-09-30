@@ -275,7 +275,7 @@ def annotate_bus_names(
                               boxstyle='circle')
     if ax is None:
         ax = plt.gca()
-    locs = n.buses[['x', 'y']].add(shift, axis=0)
+    locs = n.buses[['x', 'y']].add(shift, axis=1)
     for index in n.buses.index:
         x, y = locs.loc[index]
         string = index if adjust_str is None else adjust_str(index)

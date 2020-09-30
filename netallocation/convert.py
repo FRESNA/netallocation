@@ -86,9 +86,9 @@ def peer_to_peer(ds, n, aggregated=None, q=None):
         return ds if was_ds else ds['peer_to_peer']
     vip = ds.virtual_injection_pattern
     if aggregated is None:
-        assert 'aggregated' in vip.attrs, ('No attribute "aggregated" in '
-                                           '"virtual_injection_pattern". Please set it manually, or assign'
-                                           ' it the DataArray.')
+        assert 'aggregated' in vip.attrs, (
+            'No attribute "aggregated" in "virtual_injection_pattern". Please '
+            'set it manually, or assign it the DataArray.')
         aggregated = vip.attrs['aggregated']
     if not aggregated:
         assert 'q' in vip.attrs, ('No shift parameter "q" in attributes'
