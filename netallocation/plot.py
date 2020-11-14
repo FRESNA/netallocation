@@ -75,18 +75,15 @@ def chord_diagram(ds, agg='mean', minimum_quantile=0,
     cindex = 'index'
     ecindex = 'source'
 
-    # annoying work around to construct cycler
-    cmap = hv.plotting.util.process_cmap(pallette, ncolors=20)
-    cmap = hv.core.options.Cycle(cmap)
     nodes = hv.Dataset(nodes, 'index')
     diagram = hv.Chord((links, nodes))
-    diagram = diagram.opts(style={'cmap': cmap,
-                                  'edge_cmap': cmap,
+    diagram = diagram.opts(style={'cmap': pallette,
+                                  'edge_cmap': pallette,
                                   'tight': True},
                            plot={'label_index': 'bus',
                                  'color_index': cindex,
                                  'edge_color_index': ecindex})
-#    fig = hv.render(diagram, size=size, dpi=300)
+    # fig = hv.render(diagram, size=size, dpi=300)
     fig = LayoutPlot(Layout([diagram]), dpi=300, fig_size=size,
                      fig_inches=fig_inches,
                      tight=True, tight_padding=0,
@@ -160,7 +157,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
            line_colors=line_colors['cur'],
            link_colors=line_colors['cur'],
            boundaries=boundaries,
-           title=r'Generation & Transmission Capacities',
+           title='Generation and \nTransmission Capacities',
            ax=ax, **kwargs)
 
     n.plot(
@@ -178,7 +175,7 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
         line_colors=line_colors['exp'],
         link_colors=line_colors['exp'],
         boundaries=boundaries,
-        title=r'Storages Capacities & Transmission Expansion',
+        title='Storages Capacities and \nTransmission Expansion',
         ax=ax2,
         **kwargs)
     ax.axis('off')
@@ -188,15 +185,17 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     reference_caps = [10e3, 5e3, 1e3]
     for axis, scale in zip((ax, ax2), (gen_size_factor, sus_size_factor)):
         handles = make_legend_circles_for(reference_caps, scale=scale /
-                                          projected_area_factor(axis)**2,
+                                          projected_area_factor(axis)**2 / 3,
                                           facecolor="w", edgecolor='grey',
                                           alpha=.5)
+
         labels = ["{} GW".format(int(s / 1e3)) for s in reference_caps]
+        handler_map = make_handler_map_to_scale_circles_as_in(axis)
         l2 = axis.legend(handles, labels, framealpha=0.7,
                          loc="upper left", bbox_to_anchor=(0., 1),
                          frameon=True,  # edgecolor='w',
                          title='Capacity',
-                         handler_map=make_handler_map_to_scale_circles_as_in(axis))
+                         handler_map=handler_map)
         axis.add_artist(l2)
         reference_caps.pop(0)
 
@@ -230,12 +229,12 @@ def component_plot(n, linewidth_factor=5e3, gen_size_factor=5e4,
     if carrier_names is not None:
         colors = colors.rename(carrier_names)
     fig.artists.append(fig.legend(*handles_labels_for(colors),
-                                  loc='upper left', bbox_to_anchor=(1, 0.45),
+                                  loc='upper left', bbox_to_anchor=(1, 0.55),
                                   frameon=False,
                                   title='Storage carrier'))
 
     fig.canvas.draw()
-    fig.tight_layout(pad=0.5)
+    fig.tight_layout()
     return fig, (ax, ax2)
 
 

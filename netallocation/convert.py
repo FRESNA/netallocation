@@ -9,18 +9,16 @@ import pandas as pd
 import warnings
 from .utils import obj_if_acc, upper, check_dataset, is_sparse
 from .grid import Incidence, self_consumption, power_demand, power_production
-from .linalg import dot
-import warnings
 
 
 def virtual_patterns(ds, n, q=0.5):
     """
-    Converts a peer-on-branch-to-peer into a virtual flow/injection pattern.
+    Convert a peer-on-branch-to-peer into a virtual flow/injection pattern.
 
     If a virtual flow pattern array is already existent, nothing is done.
 
     Parameters
-    -----------
+    ----------
     ds : xarray.Dataset or xarray.DataArray
     n : pypsa.Network
         Underlying network. This is needed for determining the Incidence matrix.
@@ -28,6 +26,7 @@ def virtual_patterns(ds, n, q=0.5):
         Ratio of net source and net sink contributions in the virtual patterns.
         If q=0 then only net importers are taken into account (if q=1 only
         net exporters).
+
     Returns
     -------
     A xarray.Dataset with the virtual flow pattern variable appended if a
@@ -54,12 +53,12 @@ def virtual_patterns(ds, n, q=0.5):
 
 def peer_to_peer(ds, n, aggregated=None, q=None):
     """
-    Converts a virtual injection pattern into a peer-to-peer allocation.
+    Convert a virtual injection pattern into a peer-to-peer allocation.
 
     If a peer-to-peer array is already existent, nothing is done.
 
     Parameters
-    -----------
+    ----------
     ds : xarray.Dataset or xarray.DataArray
     aggregated: boolean, defaut None
         Within the aggregated coupling scheme (obtained if set to True),
@@ -74,6 +73,7 @@ def peer_to_peer(ds, n, aggregated=None, q=None):
         Only necessary when aggregated if False. Sets the shift parameter q,
         which determines the share of contribution of production and demand.
         Defaults to ds.virtual_injection_pattern.attrs['q'].
+
     Returns
     -------
     A xarray.Dataset with the peer-to-peer variable appended if a Dataset was
