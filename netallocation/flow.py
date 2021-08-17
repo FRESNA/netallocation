@@ -733,7 +733,7 @@ def flow_allocation(n, snapshots=None, method='Average participation',
     func = _func_dict[method]
     res = [dask.delayed(func)(n, sn, **kwargs) for sn in snapshots]
     with ProgressBar():
-        res = xr.concat(dask.compute(*res, scheduler='synchronous'),
+        res = xr.concat(dask.compute(*res),
                         dim=snapshots.rename('snapshot'))
 
     return res

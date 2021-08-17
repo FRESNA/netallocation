@@ -120,7 +120,7 @@ def test_duality_with_investment_sn_weightings():
     n = ntl.test.get_network_ac_dc()
     n.snapshot_weightings[:] = 3
     n.global_constraints.constant *= 3
-    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+    n.lopf(pyomo=False, keep_shadowprices=False, solver_name='cbc')
     check_duality(n)
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
@@ -133,6 +133,23 @@ def test_duality_investment_mix_ext_nonext_lines():
     check_duality(n)
     check_zero_profit_branches(n)
     check_zero_profit_generators(n)
+
+
+def allocate_revenue():
+    n = ntl.test.get_network_ac_dc()
+    n.lopf(pyomo=False, keep_shadowprices=True, solver_name='cbc')
+    ds = ntl.allocate_revenue(n)
+
+    payment = ds.sum([d for d in ds.dims if d.startswith('receiver')])
+    payment = payment.dispatch_revenue + payment.congestion_revenue
+    assert_allclose(nodal_demand_cost(n).rename(bus='payer'), payment)
+
+    # cr = ds.congestion_revenue.sum('payer')
+    # assert_allclose(nodal_demand_cost(n).rename(bus='payer'), payment)
+
+    # payment = ds.sum([d for d in ds.dims if d.startswith('receiver')])
+    # payment = payment.dispatch_revenue + payment.congestion_revenue
+    # assert_allclose(nodal_demand_cost(n).rename(bus='payer'), payment)
 
 
 # def test_cost_allocation():

@@ -17,7 +17,7 @@ from .linalg import norm
 from .convert import peer_to_peer, virtual_patterns
 from .breakdown import expand_by_source_type
 from .grid import (Incidence, impedance, energy_production, energy_demand,
-                   power_production)
+                   power_production, Cycles)
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +247,31 @@ def locational_market_price_diff(n, snapshots=None):
     return Incidence(n) @ locational_market_price(n, snapshots)
 
 
+def cycle_constraint_price(n, snapshots=None):
+    """
+    Calculate the cost per branch and snapshot for the cycle constraint
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+        The default None results in taking all snapshots of n.
+
+    Returns
+    -------
+    xr.DataArray
+        Cycle cost for passive branches, dimension {snapshot, branch}.
+
+    """
+    C = Cycles(n)
+    snapshots = check_snapshots(snapshots, n)
+    comps = n.passive_branch_components
+    z = impedance(n, comps, snapshots)
+    sp = n.sub_networks_t.mu_kirchhoff_voltage_law.loc[snapshots]
+    shadowprice = DataArray(sp, dims=['snapshot', 'cycle']) * 1e5
+    return (C * z * shadowprice).sum('cycle')
+
+
 def cycle_constraint_cost(n, snapshots=None):
     """
     Calculate the cost per branch and snapshot for the cycle constraint
@@ -264,7 +289,7 @@ def cycle_constraint_cost(n, snapshots=None):
 
     """
     # Interesting fact: The cycle constraint cost are not weighted with
-    # snapshot_weightings if they or not 1.
+    # snapshot_weightings different to 1.
     C = []
     i = 0
     for sub in n.sub_networks.obj:
@@ -306,7 +331,7 @@ def congestion_revenue(n, snapshots=None, split=False):
         Congestion Revenue, dimension {snapshot, branch}.
 
     """
-    cr = - locational_market_price_diff(n, snapshots) * \
+    cr = - locational_market_price_diff(n, snapshots).transpose() * \
         network_flow(n, snapshots) * snapshot_weightings(n, snapshots)
     if 'mu_kirchhoff_voltage_law' in n.sub_networks_t:
         cr += cycle_constraint_cost(n,
@@ -449,6 +474,63 @@ def objective_constant(n):
     return constant
 
 
+def allocate_revenue(n, snapshots=None, chunksize=None, with_cycle_prices=False,
+                     **kwargs):
+    """
+    Allocate the market revenue per asset based Average Participation.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+    snapshots : subset of n.snapshots
+    method : str/xarray.Dataset
+        Method on which the revenue allocation is based. Must be an available
+        method for ``netallocation.allocate_flow``. Alternatively to a string,
+        an calculated allocation xarray.Dataset can be passed.
+    kwargs : dict
+        Keyword arguments for ``flow_allocation()``. For operational and
+        capital costs for branches, the allocation default to q=0, meaning
+        that all transmission costs are covered by the sinks. For a 50%-50%
+        split between sinks and sources, set q to 0.5. for transmission cost
+        totally allocated to sources, set q to 1.
+
+    Returns
+    -------
+    xarray.DataArray
+        Peer-to-peer cost allocation.
+
+    """
+    if 'q' in kwargs and 'aggregated' in kwargs:
+        if kwargs['q'] > 0 and not kwargs['aggregated']:
+            logger.warning(
+                'Setting parameter q != 0 with non aggregated '
+                'coupling will results in inaccurate cost allocation.')
+    ds = flow_allocation(n, snapshots, 'ptpf', **kwargs)
+    was_timestep = False
+    if not ds.snapshot.shape:
+        was_timestep = True
+        ds = ds.expand_dims('snapshot')
+
+
+    p2p = expand_by_source_type(ds.peer_to_peer, n, chunksize=chunksize)
+    vfp = ds.peer_on_branch_to_peer.sum('source')
+
+    lmp = locational_market_price(n, snapshots)
+    lmp_diff = locational_market_price_diff(n, snapshots)
+    if with_cycle_prices:
+        lmp_diff -= cycle_constraint_price(n, snapshots)
+
+    d = dict(sink='payer', branch='receiver_branch',
+             source='receiver_node', source_carrier='receiver_carrier')
+
+    res =  Dataset({'dispatch_revenue': p2p * lmp.rename(bus='source'),
+                    'congestion_revenue': - vfp * lmp_diff})
+    res = res.rename(d)
+
+    return res.sel(snapshot=res.snapshot[0]) if was_timestep else res
+
+
+
 def allocate_cost(n, snapshots=None, method='ap', chunksize=None, **kwargs):
     """
     Allocate production cost based on an allocation method.
@@ -504,8 +586,8 @@ def allocate_cost(n, snapshots=None, method='ap', chunksize=None, **kwargs):
     op_branch = allocate_branch_operational_cost(vfp, n)
     inv_branch = allocate_branch_investment_cost(vfp, n)
 
-    d = dict(sink='payer', bus='payer', branch='receiver_transmission_cost',
-             source='receiver_nodal_cost', source_carrier='receiver_carrier')
+    d = dict(sink='payer', bus='payer', branch='receiver_branch',
+             source='receiver_node', source_carrier='receiver_carrier')
 
     def rename(da): return da.rename(
         {k: v for k, v in d.items() if k in da.dims})

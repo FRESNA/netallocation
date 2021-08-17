@@ -66,7 +66,7 @@ def Cycles(n, branches_i=None):
         branches_i = branches.index.rename(['component', 'branch_i'])
     else:
         branches = branches.reindex(branches_i)
-    branches = branches.assign(index=branches_i)
+    branches = branches.assign(index=branches_i.to_numpy())
     branches_bus0 = branches['source']
     mgraph = nx.from_pandas_edgelist(branches, edge_attr=True,
                                      create_using=nx.MultiGraph)
@@ -189,7 +189,8 @@ def impedance(n, branch_components=None, snapshot=None,
     omega = omega.round(10).assign_coords({'component': 'Link'})
     omega[(omega == 0) & (f.loc['Link'] != 0)] = 1
     Z = z.reindex_like(f).copy()
-    Z.loc['Link'] = omega.reindex_like(f.loc['Link'], fill_value=0)
+    links_i = branches_i[branches_i.get_loc('Link')]
+    Z.loc[links_i] = omega.reindex_like(f.loc['Link'], fill_value=0)
     return Z.assign_coords(snapshot=snapshot)
 
 
